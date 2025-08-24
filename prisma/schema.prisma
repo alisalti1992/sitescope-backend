@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  createdAt DateTime @default(now())
+}
+
+model CrawlJob {
+  id                    Int           @id @default(autoincrement())
+  url                   String
+  maxPages              Int
+  ai                    Boolean
+  email                 String
+  status                String        @default("pending") // pending, running, completed, failed, paused
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  completedAt           DateTime?
+  errorMessage          String?
+  startedAt             DateTime?
+  totalUniquePagesFound Int           @default(0) // Total unique pages discovered
+  pagesCrawled          Int           @default(0) // Pages actually crawled and saved
+  pagesRemaining        Int           @default(0) // maxPages - pagesCrawled
+  canContinue           Boolean       @default(true) // Whether crawl can be resumed
+  lastCrawledUrl        String?       // Last successfully crawled URL
+  crawledPages          CrawledPage[]
+  discoveredLinks       DiscoveredLink[]
+}
+
+model CrawledPage {
+  id                 Int      @id @default(autoincrement())
+  jobId              Int
+  url                String
+  title              String?
+  metaDescription    String?
+  metaKeywords       String?
+  htmlContent        String? @db.Text
+  textContent        String? @db.Text
+  screenshotPath     String?
+  statusCode         Int?
+  responseTime       Int?
+  wordCount          Int?
+  linkCount          Int?
+  imageCount         Int?
+  h1Tags             String[]
+  h2Tags             String[]
+  h3Tags             String[]
+  canonicalUrl       String?
+  ogTitle            String?
+  ogDescription      String?
+  ogImage            String?
+  twitterTitle       String?
+  twitterDescription String?
+  twitterImage       String?
+  lang               String?
+  charset            String?
+  viewport           String?
+  robots             String?
+  crawledAt          DateTime @default(now())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  job                CrawlJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@index([url])
+}
+
+model DiscoveredLink {
+  id          Int      @id @default(autoincrement())
+  jobId       Int
+  job         CrawlJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  url         String
+  sourceUrl   String   // The page where this link was found
+  isCrawlable Boolean  @default(true) // Whether this link should be crawled
+  isCrawled   Boolean  @default(false) // Whether this link has been crawled
+  discoveredAt DateTime @default(now())
+  
+  @@unique([jobId, url]) // Prevent duplicate links per job
+  @@index([jobId])
+  @@index([jobId, isCrawlable])
+}
