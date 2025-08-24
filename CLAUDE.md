@@ -1,12 +1,13 @@
 # Claude Code Configuration
 
 ## Project Overview
-This is a sitescope-backend project - a web crawling backend service built with:
-- **Crawlee** for web crawling
+This is a sitescope-backend project - a comprehensive SEO web crawling service built with:
+- **Crawlee** for web crawling with Puppeteer
 - **Express** for REST API
 - **Prisma** for database management
 - **PostgreSQL** as the database
 - **Swagger** for API documentation
+- **Automatic sitemap discovery** for comprehensive crawling
 
 ## Development Commands
 - `npm run dev` - Start development server with hot reload
@@ -38,10 +39,11 @@ This is a sitescope-backend project - a web crawling backend service built with:
 - Crawl processor checks for pending jobs every 10 seconds
 - Automatically processes jobs: pending → running → completed/failed
 - Captures comprehensive page data and screenshots
-- Stores results in `CrawledPage` table
+- Stores results in `InternalLink` and `ExternalLink` tables with comprehensive SEO data
 
 ## Environment
 - Server runs on port 4000
 - Uses PostgreSQL database via Prisma
 - Environment variables configured in `.env`
 - Background crawl processor starts automatically
+- Sitemap auto-discovery for comprehensive page coverage

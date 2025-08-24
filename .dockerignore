@@ -1,8 +1,59 @@
-# configurations
-.idea
-
-# crawlee storage folder
-storage
-
-# installed files
+# Dependencies
 node_modules
+npm-debug.log*
+
+# Environment files (mount specific ones via compose)
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Build outputs
+dist/
+build/
+
+# Logs
+logs
+*.log
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Git
+.git
+.gitignore
+README.md
+DEVELOPMENT.md
+
+# Docker files
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Storage (screenshots will be mounted as volume)
+storage/screenshots/*
+
+# Temporary files
+tmp/
+temp/
