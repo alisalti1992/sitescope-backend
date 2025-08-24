@@ -1,6 +1,5 @@
 generator client {
-  provider = "prisma-client-js"
-  output   = "../src/generated/prisma"
+  provider      = "prisma-client-js"
 }
 
 datasource db {
@@ -21,6 +20,8 @@ model CrawlJob {
   maxPages              Int
   ai                    Boolean
   email                 String
+  takeScreenshots       Boolean       @default(true) // Whether to capture screenshots
+  crawlSitemap          Boolean       @default(false) // Whether to automatically discover and crawl sitemap.xml
   status                String        @default("pending") // pending, running, completed, failed, paused
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
@@ -32,59 +33,169 @@ model CrawlJob {
   pagesRemaining        Int           @default(0) // maxPages - pagesCrawled
   canContinue           Boolean       @default(true) // Whether crawl can be resumed
   lastCrawledUrl        String?       // Last successfully crawled URL
-  crawledPages          CrawledPage[]
-  discoveredLinks       DiscoveredLink[]
+  internalLinks         InternalLink[]
+  externalLinks         ExternalLink[]
+  inlinks               Inlink[]
 }
 
-model CrawledPage {
-  id                 Int      @id @default(autoincrement())
-  jobId              Int
-  url                String
-  title              String?
-  metaDescription    String?
-  metaKeywords       String?
-  htmlContent        String? @db.Text
-  textContent        String? @db.Text
-  screenshotPath     String?
-  statusCode         Int?
-  responseTime       Int?
-  wordCount          Int?
-  linkCount          Int?
-  imageCount         Int?
-  h1Tags             String[]
-  h2Tags             String[]
-  h3Tags             String[]
-  canonicalUrl       String?
-  ogTitle            String?
-  ogDescription      String?
-  ogImage            String?
-  twitterTitle       String?
-  twitterDescription String?
-  twitterImage       String?
-  lang               String?
-  charset            String?
-  viewport           String?
-  robots             String?
-  crawledAt          DateTime @default(now())
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-  job                CrawlJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+model InternalLink {
+  id                       Int      @id @default(autoincrement())
+  jobId                    Int
+  job                      CrawlJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  // Basic Info
+  address                  String
+  contentType              String?
+  statusCode               Int?
+  status                   String?
+  indexability             String?
+  indexabilityStatus       String?
+  
+  // Content Data
+  title                    String?
+  metaDescription          String?
+  metaKeywords             String?
+  h1                       String?
+  metaRobots               String?
+  canonicalLinkElement     String?
+  relNext                  String?
+  relPrev                  String?
+  httpRelNext              String?
+  httpRelPrev              String?
+  amphtmlLinkElement       String?
+  
+  // Size & Performance
+  sizeBytes                Int?
+  transferredBytes         Int?
+  totalTransferredBytes    Int?
+  co2Mg                    Float?
+  carbonRating             String?
+  responseTime             Int?
+  
+  // Content Analysis
+  wordCount                Int?
+  sentenceCount            Int?
+  avgWordsPerSentence      Float?
+  fleschReadingEaseScore   Float?
+  readability              String?
+  textRatio                Float?
+  
+  // Structure
+  crawlDepth               Int?
+  folderDepth              Int?
+  linkScore                Float?
+  
+  // Links
+  inlinks                  Int?
+  uniqueInlinks            Int?
+  uniqueJsInlinks          Int?
+  percentOfTotal           Float?
+  outlinks                 Int?
+  uniqueOutlinks           Int?
+  uniqueJsOutlinks         Int?
+  externalOutlinks         Int?
+  uniqueExternalOutlinks   Int?
+  uniqueExternalJsOutlinks Int?
+  
+  // Duplicates & Similarity
+  closestNearDuplicateMatch String?
+  numberOfNearDuplicates    Int?
+  spellingErrors            Int?
+  grammarErrors             Int?
+  
+  // Technical
+  lastModified             DateTime?
+  redirectUrl              String?
+  redirectType             String?
+  cookies                  String?
+  language                 String?
+  httpVersion              String?
+  mobileAlternateLink      String?
+  
+  // Semantic Analysis
+  closestSemanticallySimAddress String?
+  semanticSimilarityScore       Float?
+  numberOfSemanticallySimilar   Int?
+  semanticRelevanceScore        Float?
+  urlEncodedAddress            String?
+  
+  // Raw Data
+  htmlContent              String? @db.Text
+  screenshotUrl            String?
+  
+  // Timestamps
+  crawlTimestamp           DateTime @default(now())
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+  
+  // Relations
+  incomingLinks            Inlink[] @relation("InternalLinkInlinks")
+  outgoingLinks            Inlink[] @relation("InternalLinkOutlinks")
 
   @@index([jobId])
-  @@index([url])
+  @@index([address])
+  @@index([statusCode])
+  @@unique([jobId, address]) // Prevent duplicate URLs per job
 }
 
-model DiscoveredLink {
+model ExternalLink {
   id          Int      @id @default(autoincrement())
   jobId       Int
   job         CrawlJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  url         String
-  sourceUrl   String   // The page where this link was found
-  isCrawlable Boolean  @default(true) // Whether this link should be crawled
-  isCrawled   Boolean  @default(false) // Whether this link has been crawled
-  discoveredAt DateTime @default(now())
+  address     String
+  contentType String?
+  status      String?
+  inlinks     Int?
   
-  @@unique([jobId, url]) // Prevent duplicate links per job
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  incomingLinks Inlink[] @relation("ExternalLinkInlinks")
+
   @@index([jobId])
-  @@index([jobId, isCrawlable])
+  @@index([address])
+  @@unique([jobId, address]) // Prevent duplicate external URLs per job
+}
+
+model Inlink {
+  id           Int      @id @default(autoincrement())
+  jobId        Int
+  job          CrawlJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  // Link Info
+  type         String   // "internal" or "external"
+  fromAddress  String
+  toAddress    String
+  anchorText   String?
+  altText      String?
+  follow       Boolean  @default(true)
+  target       String?
+  rel          String?
+  statusCode   Int?
+  status       String?
+  pathType     String?
+  linkPath     String?
+  linkPosition Int?
+  linkOrigin   String?
+  size         Int?
+  transferred  Int?
+  
+  // Relations
+  fromInternalLink InternalLink? @relation("InternalLinkOutlinks", fields: [fromInternalLinkId], references: [id])
+  fromInternalLinkId Int?
+  
+  toInternalLink   InternalLink? @relation("InternalLinkInlinks", fields: [toInternalLinkId], references: [id])
+  toInternalLinkId Int?
+  
+  toExternalLink   ExternalLink? @relation("ExternalLinkInlinks", fields: [toExternalLinkId], references: [id])
+  toExternalLinkId Int?
+  
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([jobId])
+  @@index([fromAddress])
+  @@index([toAddress])
+  @@index([type])
 }

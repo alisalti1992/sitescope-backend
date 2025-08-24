@@ -1,5 +1,5 @@
 const express = require("express");
-const { PrismaClient } = require("../generated/prisma");
+const { PrismaClient } = require("@prisma/client");
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -65,7 +65,7 @@ const prisma = new PrismaClient();
  */
 router.post("/", async (req, res) => {
   try {
-    const { url, maxPages, ai, email } = req.body;
+    const { url, maxPages, ai, email, takeScreenshots = true, crawlSitemap = false } = req.body;
 
     // Validate required fields
     if (!url || !maxPages || ai === undefined || !email) {
@@ -83,7 +83,28 @@ router.post("/", async (req, res) => {
           url: "string",
           maxPages: "number", 
           ai: "boolean",
-          email: "string"
+          email: "string",
+          takeScreenshots: "boolean (optional, default: true)"
+        }
+      });
+    }
+
+    // Validate takeScreenshots if provided
+    if (takeScreenshots !== undefined && typeof takeScreenshots !== "boolean") {
+      return res.status(400).json({
+        error: "Invalid field types",
+        expected: {
+          takeScreenshots: "boolean"
+        }
+      });
+    }
+
+    // Validate crawlSitemap if provided
+    if (crawlSitemap !== undefined && typeof crawlSitemap !== "boolean") {
+      return res.status(400).json({
+        error: "Invalid field types",
+        expected: {
+          crawlSitemap: "boolean"
         }
       });
     }
@@ -94,7 +115,9 @@ router.post("/", async (req, res) => {
         url,
         maxPages,
         ai,
-        email
+        email,
+        takeScreenshots,
+        crawlSitemap
       }
     });
 
@@ -142,6 +165,16 @@ router.post("/", async (req, res) => {
  *           format: email
  *           description: Email address for notifications
  *           example: "test@example.com"
+ *         takeScreenshots:
+ *           type: boolean
+ *           description: Whether to capture screenshots of pages (optional, default true)
+ *           example: true
+ *           default: true
+ *         crawlSitemap:
+ *           type: boolean
+ *           description: Whether to automatically discover and crawl sitemap.xml (optional, default false)
+ *           example: false
+ *           default: false
  *     CrawlJob:
  *       type: object
  *       properties:
