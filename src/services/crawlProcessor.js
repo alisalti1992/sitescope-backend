@@ -146,10 +146,17 @@ class CrawlProcessor {
    * @returns {PuppeteerCrawler} Configured crawler instance
    */
   async setupCrawler(job, crawledUrls) {
+    const { RequestQueue } = require("crawlee");
+    
+    // Create a unique request queue for this job
+    const uniqueQueueId = `job-${job.id}-${Date.now()}`;
+    const requestQueue = await RequestQueue.open(uniqueQueueId);
+    
     return new PuppeteerCrawler({
       maxRequestsPerCrawl: job.maxPages,
       requestHandlerTimeoutSecs: 60,
       navigationTimeoutSecs: 30,
+      requestQueue, // Use the unique request queue
       requestHandler: async ({ request, page, response, enqueueLinks, log }) => {
         await this.handlePageCrawl(job, request, page, response, enqueueLinks, log, crawledUrls);
       },
