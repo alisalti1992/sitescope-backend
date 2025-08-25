@@ -1,0 +1,6 @@
+{
+  "ignore": [
+    "storage/**/*",
+    "node_modules/**/*"
+  ]
+}
