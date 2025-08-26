@@ -600,6 +600,34 @@ class CrawlProcessor {
       pagesCrawled: finalCount,
       pagesRemaining: 0
     });
+
+    // Process AI report if requested
+    await this.processAIReport(jobId);
+  }
+
+  /**
+   * Process AI report generation for completed crawl
+   * @param {number} jobId - The completed job ID
+   */
+  async processAIReport(jobId) {
+    try {
+      const AIWebhookService = require('./aiWebhookService');
+      const aiService = new AIWebhookService();
+      
+      // Process AI report asynchronously to avoid blocking crawl completion
+      setImmediate(async () => {
+        try {
+          await aiService.processAIReport(jobId);
+        } catch (error) {
+          console.error(`❌ AI report processing failed for job ${jobId}:`, error.message);
+        } finally {
+          await aiService.close();
+        }
+      });
+      
+    } catch (error) {
+      console.error(`❌ Failed to initialize AI report processing for job ${jobId}:`, error.message);
+    }
   }
 
   /**
@@ -962,13 +990,18 @@ class CrawlProcessor {
     const urls = [];
     
     try {
-      const fetch = (await import('node-fetch')).default;
+      // Use Node.js built-in fetch (available in v18+)
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      
       const response = await fetch(sitemapUrl, {
-        timeout: 10000,
         headers: {
           'User-Agent': 'SiteScope-Bot/1.0'
-        }
+        },
+        signal: controller.signal
       });
+      
+      clearTimeout(timeout);
 
       if (!response.ok) {
         return urls;
@@ -1010,14 +1043,19 @@ class CrawlProcessor {
     const sitemapUrls = [];
     
     try {
-      const fetch = (await import('node-fetch')).default;
+      // Use Node.js built-in fetch (available in v18+)
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      
       const robotsUrl = `${baseOrigin}/robots.txt`;
       const response = await fetch(robotsUrl, {
-        timeout: 10000,
         headers: {
           'User-Agent': 'SiteScope-Bot/1.0'
-        }
+        },
+        signal: controller.signal
       });
+      
+      clearTimeout(timeout);
 
       if (response.ok) {
         const robotsContent = await response.text();

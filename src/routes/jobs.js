@@ -270,6 +270,8 @@ router.post("/", async (req, res) => {
  *           type: array
  *           items:
  *             $ref: '#/components/schemas/CrawledPageSummary'
+ *         aiReport:
+ *           $ref: '#/components/schemas/AIReport'
  *     CrawledPageSummary:
  *       type: object
  *       properties:
@@ -288,6 +290,36 @@ router.post("/", async (req, res) => {
  *         crawledAt:
  *           type: string
  *           format: date-time
+ *         readability:
+ *           type: string
+ *         fleschReadingEaseScore:
+ *           type: number
+ *     AIReport:
+ *       type: object
+ *       properties:
+ *         status:
+ *           type: string
+ *           enum: [pending, completed, failed, not_requested]
+ *           description: Status of AI report generation
+ *           example: "completed"
+ *         data:
+ *           type: object
+ *           description: AI readability report JSON data (structure varies by external service)
+ *           example: 
+ *             summary:
+ *               overallScore: 85
+ *               readabilityGrade: "Good"
+ *             pages:
+ *               - url: "https://example.com"
+ *                 score: 90
+ *                 suggestions: ["Use shorter sentences", "Break up long paragraphs"]
+ *         generatedAt:
+ *           type: string
+ *           format: date-time
+ *           description: Timestamp when AI report was generated
+ *         error:
+ *           type: string
+ *           description: Error message if AI report generation failed
  */
 
 /**
@@ -352,24 +384,42 @@ router.get("/", async (req, res) => {
         take,
         skip,
         include: {
-          crawledPages: {
+          internalLinks: {
             select: {
               id: true,
-              url: true,
+              address: true,
               title: true,
               statusCode: true,
               responseTime: true,
               wordCount: true,
-              crawledAt: true
-            }
+              crawlTimestamp: true
+            },
+            orderBy: { crawlTimestamp: "asc" }
           }
         }
       }),
       prisma.crawlJob.count({ where })
     ]);
 
+    // Format the response to map internalLinks to crawledPages
+    const formattedJobs = jobs.map(job => ({
+      ...job,
+      crawledPages: job.internalLinks.map(link => ({
+        id: link.id,
+        url: link.address,
+        title: link.title,
+        statusCode: link.statusCode,
+        responseTime: link.responseTime,
+        wordCount: link.wordCount,
+        crawledAt: link.crawlTimestamp
+      }))
+    }));
+
+    // Remove internalLinks from response
+    formattedJobs.forEach(job => delete job.internalLinks);
+
     res.json({
-      jobs,
+      jobs: formattedJobs,
       total,
       hasMore: skip + take < total
     });
@@ -411,8 +461,19 @@ router.get("/:id", async (req, res) => {
     const job = await prisma.crawlJob.findUnique({
       where: { id: jobId },
       include: {
-        crawledPages: {
-          orderBy: { crawledAt: "asc" }
+        internalLinks: {
+          select: {
+            id: true,
+            address: true,
+            title: true,
+            statusCode: true,
+            responseTime: true,
+            wordCount: true,
+            crawlTimestamp: true,
+            readability: true,
+            fleschReadingEaseScore: true
+          },
+          orderBy: { crawlTimestamp: "asc" }
         }
       }
     });
@@ -421,7 +482,36 @@ router.get("/:id", async (req, res) => {
       return res.status(404).json({ error: "Job not found" });
     }
 
-    res.json(job);
+    // Format the response to include AI report information
+    const response = {
+      ...job,
+      crawledPages: job.internalLinks.map(link => ({
+        id: link.id,
+        url: link.address,
+        title: link.title,
+        statusCode: link.statusCode,
+        responseTime: link.responseTime,
+        wordCount: link.wordCount,
+        crawledAt: link.crawlTimestamp,
+        readability: link.readability,
+        fleschReadingEaseScore: link.fleschReadingEaseScore
+      })),
+      aiReport: {
+        status: job.aiReportStatus,
+        data: job.aiReportData,
+        generatedAt: job.aiReportGeneratedAt,
+        error: job.aiReportError
+      }
+    };
+
+    // Remove internal fields from response
+    delete response.internalLinks;
+    delete response.aiReportStatus;
+    delete response.aiReportData;
+    delete response.aiReportGeneratedAt;
+    delete response.aiReportError;
+
+    res.json(response);
   } catch (error) {
     console.error("Error fetching job:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -460,10 +550,14 @@ router.get("/:id/pages/:pageId", async (req, res) => {
     const jobId = parseInt(req.params.id);
     const pageId = parseInt(req.params.pageId);
     
-    const page = await prisma.crawledPage.findFirst({
+    const page = await prisma.internalLink.findFirst({
       where: {
         id: pageId,
         jobId: jobId
+      },
+      include: {
+        incomingLinks: true,
+        outgoingLinks: true
       }
     });
 

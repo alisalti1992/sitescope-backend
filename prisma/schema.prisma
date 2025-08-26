@@ -34,6 +34,10 @@ model CrawlJob {
   pagesRemaining        Int           @default(0) // maxPages - pagesCrawled
   canContinue           Boolean       @default(true) // Whether crawl can be resumed
   lastCrawledUrl        String?       // Last successfully crawled URL
+  aiReportStatus        String?       // pending, completed, failed, not_requested
+  aiReportData          Json?         // JSON report from AI webhook
+  aiReportGeneratedAt   DateTime?     // When AI report was generated
+  aiReportError         String?       // Error message if AI report generation failed
   internalLinks         InternalLink[]
   externalLinks         ExternalLink[]
   inlinks               Inlink[]
