@@ -152,13 +152,16 @@ class CrawlProcessor {
     const uniqueQueueId = `job-${job.id}-${Date.now()}`;
     const requestQueue = await RequestQueue.open(uniqueQueueId);
     
+    // Initialize post type counters for sampled crawling
+    const postTypeCounters = new Map();
+    
     return new PuppeteerCrawler({
       maxRequestsPerCrawl: job.maxPages,
       requestHandlerTimeoutSecs: 60,
       navigationTimeoutSecs: 30,
       requestQueue, // Use the unique request queue
       requestHandler: async ({ request, page, response, enqueueLinks, log }) => {
-        await this.handlePageCrawl(job, request, page, response, enqueueLinks, log, crawledUrls);
+        await this.handlePageCrawl(job, request, page, response, enqueueLinks, log, crawledUrls, postTypeCounters);
       },
       failedRequestHandler: async ({ request, error, log }) => {
         log.error(`Failed to crawl ${request.url}: ${error.message}`);
@@ -169,13 +172,18 @@ class CrawlProcessor {
   /**
    * Handle crawling of a single page
    */
-  async handlePageCrawl(job, request, page, response, enqueueLinks, log, crawledUrls) {
+  async handlePageCrawl(job, request, page, response, enqueueLinks, log, crawledUrls, postTypeCounters = new Map()) {
     const startTime = Date.now();
     const normalizedUrl = this.normalizeUrl(request.loadedUrl || request.url);
 
     try {
       // Skip if already processed or reached limit
       if (await this.shouldSkipPage(normalizedUrl, crawledUrls, job, log)) {
+        return;
+      }
+
+      // For sampled crawl, check if we should skip based on post type limits
+      if (job.sampledCrawl && await this.shouldSkipForSampledCrawl(normalizedUrl, postTypeCounters, log)) {
         return;
       }
 
@@ -187,11 +195,27 @@ class CrawlProcessor {
       // Extract all page data
       const pageData = await this.extractAllPageData(page, normalizedUrl, response, startTime, job);
 
+      // For sampled crawl, increment the post type counter only for second-level and deeper pages
+      if (job.sampledCrawl) {
+        const urlLevel = this.getUrlLevel(normalizedUrl);
+        const postType = this.detectPostType(normalizedUrl, pageData);
+        
+        if (urlLevel > 1) {
+          // Only count second-level and deeper pages
+          const currentCount = postTypeCounters.get(postType) || 0;
+          postTypeCounters.set(postType, currentCount + 1);
+          log.info(`📊 Post type '${postType}': ${currentCount + 1}/3 pages crawled (level ${urlLevel})`);
+        } else {
+          // First-level pages are always allowed
+          log.info(`📊 First-level page allowed: ${normalizedUrl} (level ${urlLevel})`);
+        }
+      }
+
       // Save page to database
       const internalLink = await this.savePageData(job.id, normalizedUrl, pageData, response, startTime);
 
-      // Process links and enqueue new ones
-      await this.processPageLinks(job, internalLink, page, normalizedUrl, enqueueLinks, crawledUrls);
+      // Process links and enqueue new ones (with sampling logic if enabled)
+      await this.processPageLinks(job, internalLink, page, normalizedUrl, enqueueLinks, crawledUrls, postTypeCounters);
 
       // Update job progress
       await this.updateJobProgress(job.id, normalizedUrl);
@@ -356,14 +380,14 @@ class CrawlProcessor {
   /**
    * Process all links found on a page
    */
-  async processPageLinks(job, internalLinkRecord, page, sourceUrl, enqueueLinks, crawledUrls) {
+  async processPageLinks(job, internalLinkRecord, page, sourceUrl, enqueueLinks, crawledUrls, postTypeCounters = new Map()) {
     const links = await this.extractAllLinks(page, sourceUrl);
     
     // Save link relationships
     await this.saveLinkRelationships(job, internalLinkRecord, links);
     
-    // Enqueue internal links for further crawling
-    await this.enqueueInternalLinks(links.internal, enqueueLinks, crawledUrls, job.url);
+    // Enqueue internal links for further crawling (with sampling logic if enabled)
+    await this.enqueueInternalLinks(links.internal, enqueueLinks, crawledUrls, job.url, job.sampledCrawl, postTypeCounters);
   }
 
   /**
@@ -666,6 +690,108 @@ class CrawlProcessor {
   }
 
   /**
+   * Check if a page should be skipped for sampled crawl based on post type limits
+   */
+  async shouldSkipForSampledCrawl(url, postTypeCounters, log) {
+    const urlLevel = this.getUrlLevel(url);
+    
+    // Allow all first-level pages (like /about, /privacy-policy, etc.)
+    if (urlLevel === 1) {
+      return false;
+    }
+    
+    // For second-level and deeper pages, apply the 3-page limit per post type
+    const postType = this.detectPostType(url);
+    const currentCount = postTypeCounters.get(postType) || 0;
+    
+    if (currentCount >= 3) {
+      log.info(`⏭️ Skipping ${url} - already crawled 3 pages of post type '${postType}' (level ${urlLevel})`);
+      return true;
+    }
+    
+    return false;
+  }
+
+  /**
+   * Get the URL level (depth) from the root domain
+   * @param {string} url - The URL to analyze
+   * @returns {number} The level of the URL (1 for first-level like /about, 2+ for deeper levels)
+   */
+  getUrlLevel(url) {
+    try {
+      const urlObj = new URL(url);
+      const pathname = urlObj.pathname;
+      
+      // Root path is level 0
+      if (pathname === '/' || pathname === '') {
+        return 0;
+      }
+      
+      // Count path segments (excluding empty segments)
+      const pathSegments = pathname.split('/').filter(segment => segment.length > 0);
+      return pathSegments.length;
+    } catch (error) {
+      return 1; // Default to level 1 if URL parsing fails
+    }
+  }
+
+  /**
+   * Detect the post type based on URL patterns and page content
+   * @param {string} url - The URL to analyze
+   * @param {Object} pageData - Optional page data for content analysis
+   * @returns {string} The detected post type
+   */
+  detectPostType(url, pageData = null) {
+    try {
+      const urlObj = new URL(url);
+      const pathname = urlObj.pathname.toLowerCase();
+      
+      // Common blog post patterns
+      if (pathname.match(/\/(blog|post|article|news)\/.*\d{4}/)) return 'blog-post';
+      if (pathname.match(/\/\d{4}\/\d{2}\/\d{2}\//)) return 'blog-post';
+      if (pathname.match(/\/(blog|post|article|news)\//)) return 'blog-post';
+      
+      // E-commerce product patterns
+      if (pathname.match(/\/(product|item|shop)\//)) return 'product';
+      if (pathname.match(/\/p\/|\/products\//)) return 'product';
+      
+      // Category/archive pages
+      if (pathname.match(/\/(category|tag|archive|topics)\//)) return 'category';
+      if (pathname.match(/\/cat\/|\/tags\//)) return 'category';
+      
+      // Landing/service pages
+      if (pathname.match(/\/(services|solutions|features)\//)) return 'service';
+      
+      // About/company pages
+      if (pathname.match(/\/(about|company|team|contact)\//)) return 'about';
+      
+      // Documentation/help pages
+      if (pathname.match(/\/(docs|help|support|faq|guide)\//)) return 'documentation';
+      
+      // Homepage and main sections
+      if (pathname === '/' || pathname === '') return 'homepage';
+      
+      // Use page title/content if available for better detection
+      if (pageData && pageData.title) {
+        const title = pageData.title.toLowerCase();
+        if (title.includes('blog') || title.includes('post') || title.includes('article')) return 'blog-post';
+        if (title.includes('product') || title.includes('buy') || title.includes('price')) return 'product';
+        if (title.includes('category') || title.includes('archive')) return 'category';
+      }
+      
+      // Default fallback based on path depth
+      const pathSegments = pathname.split('/').filter(s => s.length > 0);
+      if (pathSegments.length === 0) return 'homepage';
+      if (pathSegments.length === 1) return 'section';
+      if (pathSegments.length >= 2) return 'content';
+      
+      return 'other';
+    } catch (error) {
+      return 'other';
+    }
+  }
+
+  /**
    * Wait for page to load completely
    */
   async waitForPageLoad(page) {
@@ -679,10 +805,27 @@ class CrawlProcessor {
   /**
    * Enqueue internal links for crawling
    */
-  async enqueueInternalLinks(internalLinks, enqueueLinks, crawledUrls, jobUrl) {
-    const urls = internalLinks
+  async enqueueInternalLinks(internalLinks, enqueueLinks, crawledUrls, jobUrl, sampledCrawl = false, postTypeCounters = new Map()) {
+    let urls = internalLinks
       .map(link => this.normalizeUrl(link.href))
       .filter(url => !crawledUrls.has(url) && this.isValidInternalUrl(url, jobUrl));
+    
+    // For sampled crawl, filter out URLs where post type limit is already reached
+    if (sampledCrawl) {
+      urls = urls.filter(url => {
+        const urlLevel = this.getUrlLevel(url);
+        
+        // Allow all first-level pages
+        if (urlLevel === 1) {
+          return true;
+        }
+        
+        // For second-level and deeper pages, check post type limits
+        const postType = this.detectPostType(url);
+        const currentCount = postTypeCounters.get(postType) || 0;
+        return currentCount < 3; // Only enqueue if we haven't reached 3 pages for this post type
+      });
+    }
     
     if (urls.length > 0) {
       try {
