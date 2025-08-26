@@ -23,6 +23,7 @@ model CrawlJob {
   takeScreenshots       Boolean       @default(true) // Whether to capture screenshots
   crawlSitemap          Boolean       @default(false) // Whether to automatically discover and crawl sitemap.xml
   sampledCrawl          Boolean       @default(false) // Whether to crawl only 3 pages of each post type
+  ignoreUrlParameters   Boolean       @default(false) // Whether to ignore URL parameters when crawling and storing links
   status                String        @default("pending") // pending, running, completed, failed, paused
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt

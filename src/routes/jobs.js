@@ -65,7 +65,7 @@ const prisma = new PrismaClient();
  */
 router.post("/", async (req, res) => {
   try {
-    const { url, maxPages, ai, email, takeScreenshots = true, crawlSitemap = false, sampledCrawl = false } = req.body;
+    const { url, maxPages, ai, email, takeScreenshots = true, crawlSitemap = false, sampledCrawl = false, ignoreUrlParameters = false } = req.body;
 
     // Validate required fields
     if (!url || !maxPages || ai === undefined || !email) {
@@ -84,7 +84,8 @@ router.post("/", async (req, res) => {
           maxPages: "number", 
           ai: "boolean",
           email: "string",
-          takeScreenshots: "boolean (optional, default: true)"
+          takeScreenshots: "boolean (optional, default: true)",
+          ignoreUrlParameters: "boolean (optional, default: false)"
         }
       });
     }
@@ -119,6 +120,16 @@ router.post("/", async (req, res) => {
       });
     }
 
+    // Validate ignoreUrlParameters if provided
+    if (ignoreUrlParameters !== undefined && typeof ignoreUrlParameters !== "boolean") {
+      return res.status(400).json({
+        error: "Invalid field types",
+        expected: {
+          ignoreUrlParameters: "boolean"
+        }
+      });
+    }
+
     // Create crawl job in database
     const crawlJob = await prisma.crawlJob.create({
       data: {
@@ -128,7 +139,8 @@ router.post("/", async (req, res) => {
         email,
         takeScreenshots,
         crawlSitemap,
-        sampledCrawl
+        sampledCrawl,
+        ignoreUrlParameters
       }
     });
 
@@ -189,6 +201,11 @@ router.post("/", async (req, res) => {
  *         sampledCrawl:
  *           type: boolean
  *           description: Whether to crawl only 3 pages of each post type for large sites (optional, default false)
+ *           example: false
+ *           default: false
+ *         ignoreUrlParameters:
+ *           type: boolean
+ *           description: Whether to ignore URL parameters when crawling and storing links (optional, default false)
  *           example: false
  *           default: false
  *     CrawlJob:

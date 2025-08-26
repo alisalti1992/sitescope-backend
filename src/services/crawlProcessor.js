@@ -110,7 +110,7 @@ class CrawlProcessor {
       const crawler = await this.setupCrawler(job, crawledUrls);
       
       // Get initial URLs to crawl
-      const initialUrls = [{ url: this.normalizeUrl(job.url) }];
+      const initialUrls = [{ url: this.normalizeUrl(job.url, job.ignoreUrlParameters) }];
       
       // Add sitemap URLs if enabled
       if (job.crawlSitemap) {
@@ -174,7 +174,7 @@ class CrawlProcessor {
    */
   async handlePageCrawl(job, request, page, response, enqueueLinks, log, crawledUrls, postTypeCounters = new Map()) {
     const startTime = Date.now();
-    const normalizedUrl = this.normalizeUrl(request.loadedUrl || request.url);
+    const normalizedUrl = this.normalizeUrl(request.loadedUrl || request.url, job.ignoreUrlParameters);
 
     try {
       // Skip if already processed or reached limit
@@ -387,7 +387,7 @@ class CrawlProcessor {
     await this.saveLinkRelationships(job, internalLinkRecord, links);
     
     // Enqueue internal links for further crawling (with sampling logic if enabled)
-    await this.enqueueInternalLinks(links.internal, enqueueLinks, crawledUrls, job.url, job.sampledCrawl, postTypeCounters);
+    await this.enqueueInternalLinks(links.internal, enqueueLinks, crawledUrls, job, postTypeCounters);
   }
 
   /**
@@ -453,7 +453,7 @@ class CrawlProcessor {
       jobId: job.id,
       type,
       fromAddress: fromLink.address,
-      toAddress: type === 'internal' ? this.normalizeUrl(link.href) : link.href,
+      toAddress: type === 'internal' ? this.normalizeUrl(link.href, job.ignoreUrlParameters) : link.href,
       anchorText: link.anchorText,
       altText: link.altText,
       follow: link.follow,
@@ -833,13 +833,13 @@ class CrawlProcessor {
   /**
    * Enqueue internal links for crawling
    */
-  async enqueueInternalLinks(internalLinks, enqueueLinks, crawledUrls, jobUrl, sampledCrawl = false, postTypeCounters = new Map()) {
+  async enqueueInternalLinks(internalLinks, enqueueLinks, crawledUrls, job, postTypeCounters = new Map()) {
     let urls = internalLinks
-      .map(link => this.normalizeUrl(link.href))
-      .filter(url => !crawledUrls.has(url) && this.isValidInternalUrl(url, jobUrl));
+      .map(link => this.normalizeUrl(link.href, job.ignoreUrlParameters))
+      .filter(url => !crawledUrls.has(url) && this.isValidInternalUrl(url, job.url));
     
     // For sampled crawl, filter out URLs where post type limit is already reached
-    if (sampledCrawl) {
+    if (job.sampledCrawl) {
       urls = urls.filter(url => {
         const urlLevel = this.getUrlLevel(url);
         
@@ -866,11 +866,19 @@ class CrawlProcessor {
 
   /**
    * Normalize URL for consistent comparison
+   * @param {string} url - The URL to normalize
+   * @param {boolean} ignoreUrlParameters - Whether to strip query parameters
    */
-  normalizeUrl(url) {
+  normalizeUrl(url, ignoreUrlParameters = false) {
     try {
       const urlObj = new URL(url);
       urlObj.hash = ''; // Remove fragments
+      
+      // Remove query parameters if ignoreUrlParameters is true
+      if (ignoreUrlParameters) {
+        urlObj.search = '';
+      }
+      
       // Remove trailing slash except for root
       if (urlObj.pathname !== '/' && urlObj.pathname.endsWith('/')) {
         urlObj.pathname = urlObj.pathname.slice(0, -1);
@@ -1023,7 +1031,7 @@ class CrawlProcessor {
             const nestedUrls = await this.fetchAndParseSitemap(resolvedUrl, baseOrigin);
             urls.push(...nestedUrls);
           } else {
-            urls.push(this.normalizeUrl(resolvedUrl));
+            urls.push(this.normalizeUrl(resolvedUrl, false)); // Don't ignore parameters for sitemap URLs
           }
         }
       }
