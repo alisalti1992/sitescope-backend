@@ -65,7 +65,7 @@ const prisma = new PrismaClient();
  */
 router.post("/", async (req, res) => {
   try {
-    const { url, maxPages, ai, email, takeScreenshots = true, crawlSitemap = false } = req.body;
+    const { url, maxPages, ai, email, takeScreenshots = true, crawlSitemap = false, sampledCrawl = false } = req.body;
 
     // Validate required fields
     if (!url || !maxPages || ai === undefined || !email) {
@@ -109,6 +109,16 @@ router.post("/", async (req, res) => {
       });
     }
 
+    // Validate sampledCrawl if provided
+    if (sampledCrawl !== undefined && typeof sampledCrawl !== "boolean") {
+      return res.status(400).json({
+        error: "Invalid field types",
+        expected: {
+          sampledCrawl: "boolean"
+        }
+      });
+    }
+
     // Create crawl job in database
     const crawlJob = await prisma.crawlJob.create({
       data: {
@@ -117,7 +127,8 @@ router.post("/", async (req, res) => {
         ai,
         email,
         takeScreenshots,
-        crawlSitemap
+        crawlSitemap,
+        sampledCrawl
       }
     });
 
@@ -173,6 +184,11 @@ router.post("/", async (req, res) => {
  *         crawlSitemap:
  *           type: boolean
  *           description: Whether to automatically discover and crawl sitemap.xml (optional, default false)
+ *           example: false
+ *           default: false
+ *         sampledCrawl:
+ *           type: boolean
+ *           description: Whether to crawl only 3 pages of each post type for large sites (optional, default false)
  *           example: false
  *           default: false
  *     CrawlJob:
