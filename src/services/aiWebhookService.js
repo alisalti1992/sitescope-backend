@@ -31,7 +31,10 @@ class AIWebhookService {
       // Get job details and check if AI report is requested
       const job = await this.prisma.crawlJob.findUnique({
         where: { id: jobId },
-        include: { internalLinks: true }
+        include: { 
+          internalLinks: true,
+          sitemaps: true
+        }
       });
 
       if (!job) {
@@ -88,11 +91,14 @@ class AIWebhookService {
         sampledCrawl: job.sampledCrawl
       },
       internalLinks: job.internalLinks.map(link => this.formatLinkForWebhook(link)),
+      robotsTxt: this.formatRobotsTxtForWebhook(job),
+      sitemaps: job.sitemaps ? job.sitemaps.map(sitemap => this.formatSitemapForWebhook(sitemap)) : [],
       metadata: {
         totalPages: job.internalLinks.length,
+        totalSitemaps: job.sitemaps ? job.sitemaps.length : 0,
         crawlType: job.sampledCrawl ? 'sampled' : 'full',
         requestedAt: new Date().toISOString(),
-        version: '1.0'
+        version: '1.1'
       }
     };
 
@@ -146,10 +152,51 @@ class AIWebhookService {
       // Timestamps
       crawledAt: link.crawlTimestamp,
       
-      // Raw content (optional, can be large)
+      // Raw content (full HTML)
       hasHtmlContent: !!link.htmlContent,
-      // Include first 1000 characters for analysis
-      htmlPreview: link.htmlContent ? link.htmlContent.substring(0, 1000) : null
+      // Include full HTML content for analysis
+      htmlContent: link.htmlContent
+    };
+  }
+
+  /**
+   * Format robots.txt data for the webhook payload
+   * @param {Object} job - The crawl job
+   * @returns {Object} Formatted robots.txt data
+   */
+  formatRobotsTxtForWebhook(job) {
+    return {
+      url: job.robotsTxtUrl,
+      content: job.robotsTxtContent,
+      statusCode: job.robotsTxtStatusCode,
+      responseTime: job.robotsTxtResponseTime,
+      fetchedAt: job.robotsTxtFetchedAt,
+      available: !!job.robotsTxtContent
+    };
+  }
+
+  /**
+   * Format a single sitemap for the webhook payload
+   * @param {Object} sitemap - Sitemap data
+   * @returns {Object} Formatted sitemap data
+   */
+  formatSitemapForWebhook(sitemap) {
+    return {
+      url: sitemap.url,
+      parentSitemapId: sitemap.parentSitemapId,
+      statusCode: sitemap.statusCode,
+      responseTime: sitemap.responseTime,
+      urlCount: sitemap.urlCount,
+      lastMod: sitemap.lastMod,
+      changeFreq: sitemap.changeFreq,
+      priority: sitemap.priority,
+      discoveredFrom: sitemap.discoveredFrom,
+      // Include a preview of URLs without overwhelming the payload
+      urlsPreview: sitemap.urls ? sitemap.urls.slice(0, 10) : [],
+      hasMoreUrls: sitemap.urls ? sitemap.urls.length > 10 : false,
+      // Don't include full content to keep payload manageable
+      hasContent: !!sitemap.content,
+      contentLength: sitemap.content ? sitemap.content.length : 0
     };
   }
 

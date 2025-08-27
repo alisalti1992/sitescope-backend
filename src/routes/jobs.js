@@ -65,7 +65,7 @@ const prisma = new PrismaClient();
  */
 router.post("/", async (req, res) => {
   try {
-    const { url, maxPages, ai, email, takeScreenshots = true, crawlSitemap = false, sampledCrawl = false, ignoreUrlParameters = false } = req.body;
+    const { url, maxPages, ai, email, takeScreenshots = true, sampledCrawl = false, ignoreUrlParameters = false } = req.body;
 
     // Validate required fields
     if (!url || !maxPages || ai === undefined || !email) {
@@ -100,16 +100,6 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // Validate crawlSitemap if provided
-    if (crawlSitemap !== undefined && typeof crawlSitemap !== "boolean") {
-      return res.status(400).json({
-        error: "Invalid field types",
-        expected: {
-          crawlSitemap: "boolean"
-        }
-      });
-    }
-
     // Validate sampledCrawl if provided
     if (sampledCrawl !== undefined && typeof sampledCrawl !== "boolean") {
       return res.status(400).json({
@@ -131,6 +121,7 @@ router.post("/", async (req, res) => {
     }
 
     // Create crawl job in database
+    // Note: robots.txt and sitemaps are always crawled automatically
     const crawlJob = await prisma.crawlJob.create({
       data: {
         url,
@@ -138,7 +129,7 @@ router.post("/", async (req, res) => {
         ai,
         email,
         takeScreenshots,
-        crawlSitemap,
+        crawlSitemap: true, // Always enabled now
         sampledCrawl,
         ignoreUrlParameters
       }
@@ -193,11 +184,6 @@ router.post("/", async (req, res) => {
  *           description: Whether to capture screenshots of pages (optional, default true)
  *           example: true
  *           default: true
- *         crawlSitemap:
- *           type: boolean
- *           description: Whether to automatically discover and crawl sitemap.xml (optional, default false)
- *           example: false
- *           default: false
  *         sampledCrawl:
  *           type: boolean
  *           description: Whether to crawl only 3 pages of each post type for large sites (optional, default false)
