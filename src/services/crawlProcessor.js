@@ -2,6 +2,8 @@ const { PuppeteerCrawler, Configuration } = require("crawlee");
 const { PrismaClient } = require("@prisma/client");
 const path = require("path");
 const fs = require("fs");
+const RobotsCrawler = require("./robotsCrawler");
+const SitemapCrawler = require("./sitemapCrawler");
 Configuration.set('systemInfoV2', true);
 
 /**
@@ -105,6 +107,10 @@ class CrawlProcessor {
         pagesRemaining: job.maxPages - job.pagesCrawled
       });
 
+      // Always crawl robots.txt and sitemaps first
+      console.log(`🤖 Processing robots.txt and sitemaps for: ${job.url}`);
+      const { robotsData, sitemaps, sitemapUrls } = await this.processRobotsAndSitemaps(job);
+
       // Setup crawler and start crawling
       const crawledUrls = new Set();
       const crawler = await this.setupCrawler(job, crawledUrls);
@@ -112,11 +118,9 @@ class CrawlProcessor {
       // Get initial URLs to crawl
       const initialUrls = [{ url: this.normalizeUrl(job.url, job.ignoreUrlParameters) }];
       
-      // Add sitemap URLs if enabled
-      if (job.crawlSitemap) {
-        console.log(`🗺️ Discovering sitemap for: ${job.url}`);
-        const sitemapUrls = await this.discoverSitemapUrls(job.url);
-        console.log(`🗺️ Found ${sitemapUrls.length} URLs in sitemap`);
+      // Add sitemap URLs (now always included)
+      if (sitemapUrls.length > 0) {
+        console.log(`🗺️ Adding ${sitemapUrls.length} URLs from sitemaps`);
         initialUrls.push(...sitemapUrls.map(url => ({ url })));
       }
       
@@ -933,154 +937,113 @@ class CrawlProcessor {
     }
   }
 
-  // ==================== SITEMAP PROCESSING ====================
+  // ==================== ROBOTS.TXT AND SITEMAP PROCESSING ====================
 
   /**
-   * Discover and parse sitemap URLs from a website
-   * @param {string} baseUrl - The base URL of the website
-   * @returns {Promise<Array>} Array of discovered URLs
+   * Process robots.txt and sitemaps for a crawl job
+   * @param {Object} job - The crawl job
+   * @returns {Promise<Object>} Object containing robots data, sitemaps, and sitemap URLs
    */
-  async discoverSitemapUrls(baseUrl) {
-    const sitemapUrls = [];
-    const baseUrlObj = new URL(baseUrl);
-    const baseOrigin = `${baseUrlObj.protocol}//${baseUrlObj.host}`;
+  async processRobotsAndSitemaps(job) {
+    const robotsCrawler = new RobotsCrawler();
+    const sitemapCrawler = new SitemapCrawler();
 
     try {
-      // Try common sitemap locations
-      const commonSitemapPaths = [
-        '/sitemap.xml',
-        '/sitemap_index.xml', 
-        '/sitemaps.xml',
-        '/sitemap1.xml'
-      ];
+      // 1. Fetch and parse robots.txt
+      console.log(`🤖 Fetching robots.txt for: ${job.url}`);
+      const robotsData = await robotsCrawler.fetchRobotsTxt(job.url);
+      
+      // Save robots.txt data to job record
+      await this.saveRobotsData(job.id, robotsData);
 
-      for (const path of commonSitemapPaths) {
-        const sitemapUrl = `${baseOrigin}${path}`;
-        console.log(`🔍 Checking sitemap at: ${sitemapUrl}`);
-        
-        const urls = await this.fetchAndParseSitemap(sitemapUrl, baseOrigin);
-        if (urls.length > 0) {
-          console.log(`✅ Found ${urls.length} URLs in ${sitemapUrl}`);
-          sitemapUrls.push(...urls);
-          break; // Found a working sitemap, stop looking
-        }
-      }
+      // 2. Discover and crawl all sitemaps
+      console.log(`🗺️ Discovering sitemaps for: ${job.url}`);
+      sitemapCrawler.reset(); // Clear any previous state
+      const sitemaps = await sitemapCrawler.discoverAndCrawlSitemaps(job.url, robotsData.sitemapUrls || []);
+      
+      // Save sitemaps to database
+      await this.saveSitemapsData(job.id, sitemaps);
 
-      // Also try robots.txt for sitemap declaration
-      if (sitemapUrls.length === 0) {
-        console.log(`🤖 Checking robots.txt for sitemap`);
-        const robotsSitemaps = await this.findSitemapInRobots(baseOrigin);
-        for (const sitemapUrl of robotsSitemaps) {
-          const urls = await this.fetchAndParseSitemap(sitemapUrl, baseOrigin);
-          sitemapUrls.push(...urls);
-        }
-      }
+      // 3. Extract URLs from sitemaps for crawling
+      const sitemapUrls = sitemapCrawler.extractUrlsForCrawling(sitemaps, job.url);
+
+      console.log(`✅ Processed ${sitemaps.length} sitemap(s) with ${sitemapUrls.length} URLs for crawling`);
+
+      return {
+        robotsData,
+        sitemaps,
+        sitemapUrls
+      };
 
     } catch (error) {
-      console.error(`❌ Error discovering sitemaps: ${error.message}`);
+      console.error(`❌ Error processing robots.txt and sitemaps:`, error.message);
+      return {
+        robotsData: null,
+        sitemaps: [],
+        sitemapUrls: []
+      };
     }
-
-    // Remove duplicates and filter to only internal URLs
-    const uniqueUrls = [...new Set(sitemapUrls)]
-      .filter(url => this.isValidInternalUrl(url, baseUrl))
-      .slice(0, 1000); // Limit to prevent overwhelming the crawler
-
-    return uniqueUrls;
   }
 
   /**
-   * Fetch and parse a sitemap XML file
-   * @param {string} sitemapUrl - URL of the sitemap
-   * @param {string} baseOrigin - Base origin for resolving relative URLs
-   * @returns {Promise<Array>} Array of URLs found in sitemap
+   * Save robots.txt data to job record
+   * @param {number} jobId - The job ID
+   * @param {Object} robotsData - Parsed robots.txt data
    */
-  async fetchAndParseSitemap(sitemapUrl, baseOrigin) {
-    const urls = [];
-    
+  async saveRobotsData(jobId, robotsData) {
     try {
-      // Use Node.js built-in fetch (available in v18+)
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-      
-      const response = await fetch(sitemapUrl, {
-        headers: {
-          'User-Agent': 'SiteScope-Bot/1.0'
-        },
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeout);
-
-      if (!response.ok) {
-        return urls;
-      }
-
-      const xmlContent = await response.text();
-      const urlMatches = xmlContent.match(/<loc>(.*?)<\/loc>/g);
-      
-      if (urlMatches) {
-        for (const match of urlMatches) {
-          const url = match.replace('<loc>', '').replace('</loc>', '').trim();
-          
-          // Handle relative URLs
-          const resolvedUrl = url.startsWith('http') ? url : `${baseOrigin}${url}`;
-          
-          // Check if this is another sitemap (sitemap index)
-          if (resolvedUrl.includes('sitemap') && resolvedUrl.endsWith('.xml')) {
-            console.log(`🔗 Found nested sitemap: ${resolvedUrl}`);
-            const nestedUrls = await this.fetchAndParseSitemap(resolvedUrl, baseOrigin);
-            urls.push(...nestedUrls);
-          } else {
-            urls.push(this.normalizeUrl(resolvedUrl, false)); // Don't ignore parameters for sitemap URLs
-          }
+      await this.prisma.crawlJob.update({
+        where: { id: jobId },
+        data: {
+          robotsTxtUrl: robotsData.url,
+          robotsTxtContent: robotsData.content,
+          robotsTxtStatusCode: robotsData.statusCode,
+          robotsTxtResponseTime: robotsData.responseTime,
+          robotsTxtFetchedAt: new Date()
         }
+      });
+
+      if (robotsData.content) {
+        console.log(`✅ Saved robots.txt data for job ${jobId}`);
       }
     } catch (error) {
-      console.log(`⚠️ Could not fetch sitemap ${sitemapUrl}: ${error.message}`);
+      console.error(`❌ Failed to save robots.txt data for job ${jobId}:`, error.message);
     }
-
-    return urls;
   }
 
   /**
-   * Find sitemap URLs declared in robots.txt
-   * @param {string} baseOrigin - Base origin of the website
-   * @returns {Promise<Array>} Array of sitemap URLs from robots.txt
+   * Save sitemaps data to database
+   * @param {number} jobId - The job ID
+   * @param {Array} sitemaps - Array of sitemap data objects
    */
-  async findSitemapInRobots(baseOrigin) {
-    const sitemapUrls = [];
-    
+  async saveSitemapsData(jobId, sitemaps) {
     try {
-      // Use Node.js built-in fetch (available in v18+)
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-      
-      const robotsUrl = `${baseOrigin}/robots.txt`;
-      const response = await fetch(robotsUrl, {
-        headers: {
-          'User-Agent': 'SiteScope-Bot/1.0'
-        },
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeout);
+      for (const sitemap of sitemaps) {
+        // Skip saving if this sitemap already failed to load
+        if (!sitemap.content) continue;
 
-      if (response.ok) {
-        const robotsContent = await response.text();
-        const sitemapMatches = robotsContent.match(/^Sitemap:\s*(.*?)$/gim);
-        
-        if (sitemapMatches) {
-          for (const match of sitemapMatches) {
-            const url = match.replace(/^Sitemap:\s*/i, '').trim();
-            sitemapUrls.push(url);
+        await this.prisma.sitemap.create({
+          data: {
+            jobId,
+            url: sitemap.url,
+            parentSitemapId: sitemap.parentSitemapId,
+            content: sitemap.content,
+            statusCode: sitemap.statusCode,
+            responseTime: sitemap.responseTime,
+            urlCount: sitemap.urlCount,
+            urls: sitemap.urls,
+            lastMod: sitemap.lastMod,
+            changeFreq: sitemap.changeFreq,
+            priority: sitemap.priority,
+            discoveredFrom: sitemap.discoveredFrom
           }
-        }
+        });
       }
-    } catch (error) {
-      console.log(`⚠️ Could not fetch robots.txt: ${error.message}`);
-    }
 
-    return sitemapUrls;
+      console.log(`✅ Saved ${sitemaps.filter(s => s.content).length} sitemap(s) to database for job ${jobId}`);
+    } catch (error) {
+      console.error(`❌ Failed to save sitemaps data for job ${jobId}:`, error.message);
+    }
   }
 
   // ==================== CALCULATION HELPERS ====================

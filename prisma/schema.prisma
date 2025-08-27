@@ -39,9 +39,18 @@ model CrawlJob {
   aiReportData          Json?         // JSON report from AI webhook
   aiReportGeneratedAt   DateTime?     // When AI report was generated
   aiReportError         String?       // Error message if AI report generation failed
+  
+  // Robots.txt data (single file per domain)
+  robotsTxtUrl          String?       // URL of the robots.txt file
+  robotsTxtContent      String?       @db.Text // Full content of robots.txt
+  robotsTxtStatusCode   Int?          // HTTP status code for robots.txt
+  robotsTxtResponseTime Int?          // Response time in milliseconds
+  robotsTxtFetchedAt    DateTime?     // When robots.txt was fetched
+  
   internalLinks         InternalLink[]
   externalLinks         ExternalLink[]
   inlinks               Inlink[]
+  sitemaps              Sitemap[]
 }
 
 model InternalLink {
@@ -204,4 +213,39 @@ model Inlink {
   @@index([fromAddress])
   @@index([toAddress])
   @@index([type])
+}
+
+model Sitemap {
+  id              Int      @id @default(autoincrement())
+  jobId           Int
+  job             CrawlJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  // Basic info
+  url             String   // URL of the sitemap file
+  parentSitemapId Int?     // Parent sitemap ID if this is from a sitemap index
+  parentSitemap   Sitemap? @relation("SitemapHierarchy", fields: [parentSitemapId], references: [id])
+  childSitemaps   Sitemap[] @relation("SitemapHierarchy")
+  
+  // Content
+  content         String   @db.Text // Full XML content of sitemap
+  statusCode      Int?     // HTTP status code
+  responseTime    Int?     // Response time in milliseconds
+  
+  // Parsed data
+  urlCount        Int      @default(0) // Number of URLs found in this sitemap
+  urls            Json?    // Extracted URLs with metadata as JSON
+  lastMod         DateTime? // Last modification from sitemap
+  changeFreq      String?  // Change frequency if specified
+  priority        Float?   // Priority if specified
+  
+  // Discovery info
+  discoveredFrom  String?  // How this sitemap was discovered (robots.txt, sitemap-index, etc.)
+  
+  // Metadata
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([jobId])
+  @@index([url])
+  @@unique([jobId, url]) // Prevent duplicate sitemap URLs per job
 }
