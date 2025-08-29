@@ -607,6 +607,9 @@ class CrawlProcessor {
 
     // Process AI report if requested
     await this.processAIReport(jobId);
+
+    // Send email report if enabled
+    await this.sendEmailReport(jobId);
   }
 
   /**
@@ -631,6 +634,38 @@ class CrawlProcessor {
       
     } catch (error) {
       console.error(`❌ Failed to initialize AI report processing for job ${jobId}:`, error.message);
+    }
+  }
+
+  /**
+   * Send email report for completed crawl job
+   * @param {number} jobId - The completed job ID
+   */
+  async sendEmailReport(jobId) {
+    try {
+      const EmailService = require('./emailService');
+      const emailService = new EmailService();
+      
+      // Send email report asynchronously to avoid blocking crawl completion
+      setImmediate(async () => {
+        try {
+          console.log(`📧 Sending email report for job ${jobId}...`);
+          const result = await emailService.sendJobCompletionReport(jobId);
+          
+          if (result.success) {
+            console.log(`✅ Email report sent successfully for job ${jobId} to ${result.recipient}`);
+          } else {
+            console.log(`⚠️ Email report not sent for job ${jobId}: ${result.reason || result.error}`);
+          }
+        } catch (error) {
+          console.error(`❌ Email report delivery failed for job ${jobId}:`, error.message);
+        } finally {
+          await emailService.close();
+        }
+      });
+      
+    } catch (error) {
+      console.error(`❌ Failed to initialize email service for job ${jobId}:`, error.message);
     }
   }
 
