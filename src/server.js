@@ -1,9 +1,11 @@
 require("dotenv").config();
 const express = require("express");
 const CrawlProcessor = require("./services/crawlProcessor");
+const UserService = require("./services/userService");
 
 const app = express();
 const crawlProcessor = new CrawlProcessor();
+const userService = new UserService();
 
 const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
@@ -15,27 +17,49 @@ setupSwagger(app);
 
 // Root Route
 app.get("/", (req, res) => {
-    res.json(`✅ Server running at ${BASE_URL}`);
+    res.json({
+        message: `✅ Server running at ${BASE_URL}`,
+        api: `${BASE_URL}/api`,
+        docs: `${BASE_URL}/api-docs`,
+        features: {
+            userManagement: process.env.FEATURE_USER_MANAGEMENT === 'true',
+            emailReports: process.env.FEATURE_EMAIL_REPORTS === 'true'
+        }
+    });
 });
 
-// Users Routes
+// API Routes under /api prefix
+const apiRouter = express.Router();
+
+// Authentication Routes (no auth required for login)
+const authRoutes = require("./routes/auth");
+apiRouter.use('/auth', authRoutes);
+
+// User Management Routes (auth required)
 const userRoutes = require("./routes/users");
-app.use('/users', userRoutes);
+apiRouter.use('/users', userRoutes);
 
-// Health Routes
-const healthRoutes = require("./routes/health");
-app.use('/health', healthRoutes);
-
-// Jobs Routes
+// Jobs Routes (auth required)
 const jobRoutes = require("./routes/jobs");
-app.use('/jobs', jobRoutes);
+apiRouter.use('/jobs', jobRoutes);
+
+// Health Routes (no auth required)
+const healthRoutes = require("./routes/health");
+apiRouter.use('/health', healthRoutes);
+
+// Mount API router
+app.use('/api', apiRouter);
 
 // Start server
 app.listen(PORT, () => {
     console.log('Starting Server Waiting for 3 seconds to start Database');
-    setTimeout(function () {
+    setTimeout(async function () {
         console.log(`✅ Server running at ${BASE_URL}`);
         console.log(`📄 Swagger docs available at ${BASE_URL}/api-docs`);
+        console.log(`🔗 API endpoints available at ${BASE_URL}/api`);
+        
+        // Initialize user management system
+        await userService.initialize();
         
         // Start crawl processor
         crawlProcessor.start();
