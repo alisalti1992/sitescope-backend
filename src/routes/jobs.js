@@ -575,4 +575,108 @@ router.get("/:id/pages/:pageId", async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /jobs/{id}/send-email-report:
+ *   post:
+ *     summary: Send email report for a completed job
+ *     description: Manually trigger email report delivery for a completed crawl job (for testing purposes)
+ *     tags:
+ *       - Jobs
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: The job ID
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               recipient:
+ *                 type: string
+ *                 format: email
+ *                 description: Optional recipient email (overrides default BCC)
+ *                 example: "test@example.com"
+ *     responses:
+ *       200:
+ *         description: Email sent successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Email report sent successfully"
+ *                 recipient:
+ *                   type: string
+ *                   example: "test@example.com"
+ *       400:
+ *         description: Job not found or not completed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Email service error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+router.post("/:id/send-email-report", async (req, res) => {
+  try {
+    const jobId = parseInt(req.params.id);
+    const { recipient } = req.body;
+
+    // Check if job exists and is completed
+    const job = await prisma.crawlJob.findUnique({
+      where: { id: jobId }
+    });
+
+    if (!job) {
+      return res.status(400).json({ error: "Job not found" });
+    }
+
+    if (job.status !== 'completed') {
+      return res.status(400).json({ 
+        error: "Job is not completed", 
+        currentStatus: job.status 
+      });
+    }
+
+    // Load EmailService and send report
+    const EmailService = require('../services/emailService');
+    const emailService = new EmailService();
+    
+    try {
+      const result = await emailService.sendJobCompletionReport(jobId, recipient);
+      
+      if (result.success) {
+        res.json({
+          message: "Email report sent successfully",
+          recipient: result.recipient,
+          jobId: jobId
+        });
+      } else {
+        res.status(500).json({
+          error: "Failed to send email report",
+          reason: result.reason || result.error
+        });
+      }
+    } finally {
+      await emailService.close();
+    }
+
+  } catch (error) {
+    console.error("Error sending email report:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 module.exports = router;
