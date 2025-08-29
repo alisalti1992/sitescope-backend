@@ -2,10 +2,12 @@ require("dotenv").config();
 const express = require("express");
 const CrawlProcessor = require("./services/crawlProcessor");
 const UserService = require("./services/userService");
+const CronService = require("./services/cronService");
 
 const app = express();
 const crawlProcessor = new CrawlProcessor();
 const userService = new UserService();
+const cronService = new CronService();
 
 const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
@@ -64,6 +66,9 @@ app.listen(PORT, () => {
         // Start crawl processor
         crawlProcessor.start();
         console.log(`🔄 Crawl processor started`);
+
+        // Start cron service
+        cronService.start();
     }, 3000);
 });
 
@@ -71,11 +76,13 @@ app.listen(PORT, () => {
 process.on('SIGINT', async () => {
     console.log('\n🛑 Shutting down gracefully...');
     await crawlProcessor.stop();
+    cronService.stop();
     process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
     console.log('\n🛑 Shutting down gracefully...');
     await crawlProcessor.stop();
+    cronService.stop();
     process.exit(0);
 });
