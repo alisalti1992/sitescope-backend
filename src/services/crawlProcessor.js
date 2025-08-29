@@ -596,9 +596,9 @@ class CrawlProcessor {
   async finalizeCrawl(jobId) {
     console.log(`📊 Calculating link scores for job ${jobId}...`);
     await this.calculateLinkScoresAndRelationships(jobId);
-    
+
     const finalCount = await this.prisma.internalLink.count({ where: { jobId } });
-    
+
     await this.updateJobStatus(jobId, 'completed', {
       completedAt: new Date(),
       pagesCrawled: finalCount,
@@ -610,7 +610,7 @@ class CrawlProcessor {
     if (job.ai) {
       const AIWebhookService = require('./aiWebhookService');
       const aiService = new AIWebhookService();
-      aiService.processAIReport(jobId);
+      await aiService.processAIReport(jobId);
     }
 
     // Send email report if enabled

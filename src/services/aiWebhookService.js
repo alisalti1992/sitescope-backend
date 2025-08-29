@@ -157,20 +157,21 @@ class AIWebhookService {
   async buildCrawlWebhookPayload(job) {
     const pageAnalyses = await this.prisma.internalLink.findMany({
       where: { jobId: job.id, pageAnalysisStatus: 'completed' },
-      select: { pageAnalysisData: true },
+      select: { address: true, title: true, pageAnalysisData: true },
     });
 
     return {
-      sitemaps: job.sitemaps.map(s => ({
-        url: s.url,
-        urlCount: s.urlCount,
-      })),
+      sitemaps: job.sitemaps.map(s => s.content).join('\n'),
       robotsTxt: job.robotsTxtContent,
       crawlMetadata: {
         totalPagesCrawled: job.pagesCrawled,
         averagePageLoadSpeed: null, // TODO: Calculate average page load speed
       },
-      aggregatedPageAnalysisResults: pageAnalyses.map(p => p.pageAnalysisData),
+      aggregatedPageAnalysisResults: pageAnalyses.map(p => ({
+        url: p.address,
+        title: p.title,
+        analysis: p.pageAnalysisData,
+      })),
     };
   }
 
