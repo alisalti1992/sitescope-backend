@@ -1,17 +1,20 @@
 const express = require("express");
 const { PrismaClient } = require("@prisma/client");
+const { authenticateToken, requireUser } = require('../middleware/auth');
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
 /**
  * @swagger
- * /jobs:
+ * /api/jobs:
  *   post:
  *     summary: Create a new crawl job
  *     description: Creates a new web crawling job with the specified parameters and saves it to the database
  *     tags:
  *       - Jobs
+ *     security:
+ *       - BearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -63,7 +66,7 @@ const prisma = new PrismaClient();
  *                   type: string
  *                   example: "Internal server error"
  */
-router.post("/", async (req, res) => {
+router.post("/", authenticateToken, requireUser, async (req, res) => {
   try {
     const { url, maxPages, ai, email, takeScreenshots = true, sampledCrawl = false, ignoreUrlParameters = false } = req.body;
 
@@ -327,12 +330,14 @@ router.post("/", async (req, res) => {
 
 /**
  * @swagger
- * /jobs:
+ * /api/jobs:
  *   get:
  *     summary: Get all crawl jobs
  *     description: Retrieve all crawl jobs with their basic information
  *     tags:
  *       - Jobs
+ *     security:
+ *       - BearerAuth: []
  *     parameters:
  *       - in: query
  *         name: status
@@ -372,7 +377,7 @@ router.post("/", async (req, res) => {
  *                 hasMore:
  *                   type: boolean
  */
-router.get("/", async (req, res) => {
+router.get("/", authenticateToken, requireUser, async (req, res) => {
   try {
     const { status, limit = 20, offset = 0 } = req.query;
     
@@ -434,12 +439,14 @@ router.get("/", async (req, res) => {
 
 /**
  * @swagger
- * /jobs/{id}:
+ * /api/jobs/{id}:
  *   get:
  *     summary: Get a specific crawl job
  *     description: Retrieve detailed information about a specific crawl job including all crawled pages
  *     tags:
  *       - Jobs
+ *     security:
+ *       - BearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -457,7 +464,7 @@ router.get("/", async (req, res) => {
  *       404:
  *         description: Job not found
  */
-router.get("/:id", async (req, res) => {
+router.get("/:id", authenticateToken, requireUser, async (req, res) => {
   try {
     const jobId = parseInt(req.params.id);
     
@@ -523,12 +530,14 @@ router.get("/:id", async (req, res) => {
 
 /**
  * @swagger
- * /jobs/{id}/pages/{pageId}:
+ * /api/jobs/{id}/pages/{pageId}:
  *   get:
  *     summary: Get detailed page data
  *     description: Retrieve complete information about a specific crawled page
  *     tags:
  *       - Jobs
+ *     security:
+ *       - BearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -548,7 +557,7 @@ router.get("/:id", async (req, res) => {
  *       404:
  *         description: Page not found
  */
-router.get("/:id/pages/:pageId", async (req, res) => {
+router.get("/:id/pages/:pageId", authenticateToken, requireUser, async (req, res) => {
   try {
     const jobId = parseInt(req.params.id);
     const pageId = parseInt(req.params.pageId);
@@ -577,12 +586,14 @@ router.get("/:id/pages/:pageId", async (req, res) => {
 
 /**
  * @swagger
- * /jobs/{id}/send-email-report:
+ * /api/jobs/{id}/send-email-report:
  *   post:
  *     summary: Send email report for a completed job
  *     description: Manually trigger email report delivery for a completed crawl job (for testing purposes)
  *     tags:
  *       - Jobs
+ *     security:
+ *       - BearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -629,7 +640,7 @@ router.get("/:id/pages/:pageId", async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post("/:id/send-email-report", async (req, res) => {
+router.post("/:id/send-email-report", authenticateToken, requireUser, async (req, res) => {
   try {
     const jobId = parseInt(req.params.id);
     const { recipient } = req.body;

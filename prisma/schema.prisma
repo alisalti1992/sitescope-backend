@@ -11,7 +11,36 @@ model User {
   id        Int      @id @default(autoincrement())
   name      String
   email     String   @unique
+  password  String   // Hashed password
+  role      UserRole @default(STANDARD)
+  isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastLoginAt DateTime?
+  
+  // API Tokens for authentication
+  tokens    ApiToken[]
+}
+
+model ApiToken {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  name      String?  // Optional name for the token (e.g., "Mobile App", "API Client")
+  expiresAt DateTime?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastUsedAt DateTime?
+  
+  @@index([userId])
+  @@index([token])
+}
+
+enum UserRole {
+  ADMIN
+  STANDARD
 }
 
 model CrawlJob {

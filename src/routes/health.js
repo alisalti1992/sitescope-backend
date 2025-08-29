@@ -13,7 +13,7 @@ const prisma = new PrismaClient();
 
 /**
  * @swagger
- * /health:
+ * /api/health:
  *   get:
  *     summary: Check server and database health
  *     tags: [Health]
