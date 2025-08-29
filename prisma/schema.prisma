@@ -69,6 +69,13 @@ model CrawlJob {
   aiReportData          Json?         // JSON report from AI webhook
   aiReportGeneratedAt   DateTime?     // When AI report was generated
   aiReportError         String?       // Error message if AI report generation failed
+
+  // Crawl-level AI Analysis
+  crawlAnalysisStatus      String?      // pending, completed, failed
+  crawlAnalysisData        Json?        // JSON report from crawl-level AI analysis
+  crawlAnalysisError       String?      // Error message if crawl analysis failed
+  crawlAnalysisStartedAt   DateTime?    // When crawl analysis started
+  crawlAnalysisCompletedAt DateTime?    // When crawl analysis completed
   
   // Email Verification
   emailVerificationCode String?       // 6-digit verification code
@@ -184,6 +191,13 @@ model InternalLink {
   // Relations
   incomingLinks            Inlink[] @relation("InternalLinkInlinks")
   outgoingLinks            Inlink[] @relation("InternalLinkOutlinks")
+
+  // Page-level AI Analysis
+  pageAnalysisStatus      String?      // pending, completed, failed
+  pageAnalysisData        Json?        // JSON report from page-level AI analysis
+  pageAnalysisError       String?      // Error message if page analysis failed
+  pageAnalysisStartedAt   DateTime?    // When page analysis started
+  pageAnalysisCompletedAt DateTime?    // When page analysis completed
 
   @@index([jobId])
   @@index([address])

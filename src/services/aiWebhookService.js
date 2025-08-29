@@ -9,7 +9,8 @@ const { PrismaClient } = require("@prisma/client");
 class AIWebhookService {
   constructor() {
     this.prisma = new PrismaClient();
-    this.webhookUrl = process.env.AI_WEBHOOK_URL || null;
+    this.pageAnalyzerUrl = process.env.PAGE_ANALYZER_WEBHOOK_URL || null;
+    this.crawlAnalyzerUrl = process.env.CRAWL_ANALYZER_WEBHOOK_URL || null;
     this.webhookTimeout = parseInt(process.env.AI_WEBHOOK_TIMEOUT) || 30000; // 30 seconds
     this.maxRetries = parseInt(process.env.AI_WEBHOOK_MAX_RETRIES) || 3;
     this.retryDelay = parseInt(process.env.AI_WEBHOOK_RETRY_DELAY) || 5000; // 5 seconds
@@ -22,28 +23,19 @@ class AIWebhookService {
    * @param {number} jobId - The ID of the completed crawl job
    */
   async processAIReport(jobId) {
-    if (!this.webhookUrl) {
-      console.log(`⚠️ AI webhook URL not configured, skipping AI report for job ${jobId}`);
+    if (!this.pageAnalyzerUrl || !this.crawlAnalyzerUrl) {
+      console.log(`⚠️ AI webhook URLs not configured, skipping AI report for job ${jobId}`);
       return;
     }
 
     try {
-      // Get job details and check if AI report is requested
       const job = await this.prisma.crawlJob.findUnique({
         where: { id: jobId },
-        include: { 
-          internalLinks: true,
-          sitemaps: true
-        }
+        include: { internalLinks: true, sitemaps: true },
       });
 
-      if (!job) {
-        console.error(`❌ Job ${jobId} not found for AI report generation`);
-        return;
-      }
-
-      if (!job.ai) {
-        console.log(`📊 AI report not requested for job ${jobId}, skipping`);
+      if (!job || !job.ai) {
+        console.log(`📊 AI report not requested or job not found for job ${jobId}, skipping`);
         return;
       }
 
@@ -54,22 +46,86 @@ class AIWebhookService {
       }
 
       console.log(`🤖 Starting AI report generation for job ${jobId} with ${job.internalLinks.length} pages`);
-      
-      // Mark AI report as pending
       await this.updateAIReportStatus(jobId, 'pending');
 
-      // Prepare and send webhook payload
-      const payload = this.buildWebhookPayload(job);
-      const aiReport = await this.sendWebhookWithRetry(payload, jobId);
+      // Step 1: Perform page-level analysis in parallel
+      await this.processAllPages(job);
 
-      // Store the AI report
-      await this.updateAIReportStatus(jobId, 'completed', aiReport);
-      
+      // Step 2: Perform crawl-level analysis
+      await this.processCrawlAnalysis(job);
+
       console.log(`✅ AI report generated successfully for job ${jobId}`);
-
     } catch (error) {
       console.error(`❌ AI report generation failed for job ${jobId}:`, error.message);
       await this.updateAIReportStatus(jobId, 'failed', null, error.message);
+    }
+  }
+
+  async processAllPages(job) {
+    const promises = job.internalLinks.map(link => this.processPageAnalysis(link, job));
+    await Promise.all(promises);
+  }
+
+  async processPageAnalysis(link, job) {
+    try {
+      await this.prisma.internalLink.update({
+        where: { id: link.id },
+        data: { pageAnalysisStatus: 'pending', pageAnalysisStartedAt: new Date() },
+      });
+
+      const payload = this.buildPageWebhookPayload(link, job);
+      const analysisData = await this.sendWebhookWithRetry(payload, link.jobId, this.pageAnalyzerUrl);
+
+      await this.prisma.internalLink.update({
+        where: { id: link.id },
+        data: {
+          pageAnalysisStatus: 'completed',
+          pageAnalysisData: analysisData,
+          pageAnalysisCompletedAt: new Date(),
+        },
+      });
+    } catch (error) {
+      await this.prisma.internalLink.update({
+        where: { id: link.id },
+        data: {
+          pageAnalysisStatus: 'failed',
+          pageAnalysisError: error.message,
+          pageAnalysisCompletedAt: new Date(),
+        },
+      });
+    }
+  }
+
+  async processCrawlAnalysis(job) {
+    try {
+      await this.prisma.crawlJob.update({
+        where: { id: job.id },
+        data: { crawlAnalysisStatus: 'pending', crawlAnalysisStartedAt: new Date() },
+      });
+
+      const payload = await this.buildCrawlWebhookPayload(job);
+      const analysisData = await this.sendWebhookWithRetry(payload, job.id, this.crawlAnalyzerUrl);
+
+      await this.prisma.crawlJob.update({
+        where: { id: job.id },
+        data: {
+          crawlAnalysisStatus: 'completed',
+          crawlAnalysisData: analysisData,
+          crawlAnalysisCompletedAt: new Date(),
+          aiReportStatus: 'completed',
+          aiReportData: analysisData,
+          aiReportGeneratedAt: new Date(),
+        },
+      });
+    } catch (error) {
+      await this.prisma.crawlJob.update({
+        where: { id: job.id },
+        data: {
+          crawlAnalysisStatus: 'failed',
+          crawlAnalysisError: error.message,
+          crawlAnalysisCompletedAt: new Date(),
+        },
+      });
     }
   }
 
@@ -80,153 +136,59 @@ class AIWebhookService {
    * @param {Object} job - The crawl job with internal links
    * @returns {Object} Webhook payload
    */
-  buildWebhookPayload(job) {
-    const payload = {
-      jobId: job.id,
-      jobInfo: {
-        url: job.url,
-        maxPages: job.maxPages,
-        pagesCrawled: job.pagesCrawled,
-        completedAt: job.completedAt,
-        sampledCrawl: job.sampledCrawl
+  buildPageWebhookPayload(link, job) {
+    return {
+      jobId: link.jobId,
+      pageId: link.id,
+      pageContent: link.htmlContent,
+      crawlMetadata: {
+        url: link.address,
+        title: link.title,
+        metaDescription: link.metaDescription,
+        h1: link.h1,
+        wordCount: link.wordCount,
+        fleschReadingEaseScore: link.fleschReadingEaseScore,
       },
-      internalLinks: job.internalLinks.map(link => this.formatLinkForWebhook(link)),
-      robotsTxt: this.formatRobotsTxtForWebhook(job),
-      sitemaps: job.sitemaps ? job.sitemaps.map(sitemap => this.formatSitemapForWebhook(sitemap)) : [],
-      metadata: {
-        totalPages: job.internalLinks.length,
-        totalSitemaps: job.sitemaps ? job.sitemaps.length : 0,
-        crawlType: job.sampledCrawl ? 'sampled' : 'full',
-        requestedAt: new Date().toISOString(),
-        version: '1.1'
-      }
+      robotsTxt: job.robotsTxtContent,
+      sitemap: job.sitemaps.map(s => s.content).join('\n'),
     };
-
-    return payload;
   }
 
-  /**
-   * Format a single internal link for the webhook payload
-   * @param {Object} link - Internal link data
-   * @returns {Object} Formatted link data
-   */
-  formatLinkForWebhook(link) {
+  async buildCrawlWebhookPayload(job) {
+    const pageAnalyses = await this.prisma.internalLink.findMany({
+      where: { jobId: job.id, pageAnalysisStatus: 'completed' },
+      select: { address: true, title: true, pageAnalysisData: true },
+    });
+
     return {
-      // Basic Info
-      url: link.address,
-      statusCode: link.statusCode,
-      contentType: link.contentType,
-      indexability: link.indexability,
-      
-      // Content Data
-      title: link.title,
-      metaDescription: link.metaDescription,
-      h1: link.h1,
-      metaRobots: link.metaRobots,
-      language: link.language,
-      
-      // Content Analysis
-      wordCount: link.wordCount,
-      sentenceCount: link.sentenceCount,
-      avgWordsPerSentence: link.avgWordsPerSentence,
-      fleschReadingEaseScore: link.fleschReadingEaseScore,
-      readability: link.readability,
-      textRatio: link.textRatio,
-      
-      // Size & Performance
-      sizeBytes: link.sizeBytes,
-      responseTime: link.responseTime,
-      
-      // Structure
-      crawlDepth: link.crawlDepth,
-      folderDepth: link.folderDepth,
-      
-      // Links
-      inlinks: link.inlinks,
-      outlinks: link.outlinks,
-      externalOutlinks: link.externalOutlinks,
-      
-      // Technical
-      canonicalUrl: link.canonicalLinkElement,
-      
-      // Timestamps
-      crawledAt: link.crawlTimestamp,
-      
-      // Raw content (full HTML)
-      hasHtmlContent: !!link.htmlContent,
-      // Include full HTML content for analysis
-      htmlContent: link.htmlContent
+      sitemaps: job.sitemaps.map(s => s.content).join('\n'),
+      robotsTxt: job.robotsTxtContent,
+      crawlMetadata: {
+        totalPagesCrawled: job.pagesCrawled,
+        averagePageLoadSpeed: null, // TODO: Calculate average page load speed
+      },
+      aggregatedPageAnalysisResults: pageAnalyses.map(p => ({
+        url: p.address,
+        title: p.title,
+        analysis: p.pageAnalysisData,
+      })),
     };
   }
 
-  /**
-   * Format robots.txt data for the webhook payload
-   * @param {Object} job - The crawl job
-   * @returns {Object} Formatted robots.txt data
-   */
-  formatRobotsTxtForWebhook(job) {
-    return {
-      url: job.robotsTxtUrl,
-      content: job.robotsTxtContent,
-      statusCode: job.robotsTxtStatusCode,
-      responseTime: job.robotsTxtResponseTime,
-      fetchedAt: job.robotsTxtFetchedAt,
-      available: !!job.robotsTxtContent
-    };
-  }
-
-  /**
-   * Format a single sitemap for the webhook payload
-   * @param {Object} sitemap - Sitemap data
-   * @returns {Object} Formatted sitemap data
-   */
-  formatSitemapForWebhook(sitemap) {
-    return {
-      url: sitemap.url,
-      parentSitemapId: sitemap.parentSitemapId,
-      statusCode: sitemap.statusCode,
-      responseTime: sitemap.responseTime,
-      urlCount: sitemap.urlCount,
-      lastMod: sitemap.lastMod,
-      changeFreq: sitemap.changeFreq,
-      priority: sitemap.priority,
-      discoveredFrom: sitemap.discoveredFrom,
-      // Include a preview of URLs without overwhelming the payload
-      urlsPreview: sitemap.urls ? sitemap.urls.slice(0, 10) : [],
-      hasMoreUrls: sitemap.urls ? sitemap.urls.length > 10 : false,
-      // Don't include full content to keep payload manageable
-      hasContent: !!sitemap.content,
-      contentLength: sitemap.content ? sitemap.content.length : 0
-    };
-  }
-
-  // ==================== WEBHOOK COMMUNICATION ====================
-
-  /**
-   * Send webhook request with retry logic
-   * @param {Object} payload - The payload to send
-   * @param {number} jobId - Job ID for logging
-   * @returns {Object} AI report JSON
-   */
-  async sendWebhookWithRetry(payload, jobId) {
+  async sendWebhookWithRetry(payload, jobId, url) {
     let lastError;
 
     for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
       try {
         console.log(`🔄 Sending AI webhook request (attempt ${attempt}/${this.maxRetries}) for job ${jobId}`);
-        
-        const response = await this.sendWebhookRequest(payload);
-        
+        const response = await this.sendWebhookRequest(payload, url);
         console.log(`✅ AI webhook request successful for job ${jobId}`);
         return response;
-
       } catch (error) {
         lastError = error;
         console.error(`❌ AI webhook attempt ${attempt} failed for job ${jobId}:`, error.message);
-        
-        // Wait before retry (except on last attempt)
         if (attempt < this.maxRetries) {
-          await this.delay(this.retryDelay * attempt); // Exponential backoff
+          await this.delay(this.retryDelay * attempt);
         }
       }
     }
@@ -234,25 +196,19 @@ class AIWebhookService {
     throw new Error(`AI webhook failed after ${this.maxRetries} attempts: ${lastError.message}`);
   }
 
-  /**
-   * Send a single webhook request
-   * @param {Object} payload - The payload to send
-   * @returns {Object} Parsed JSON response
-   */
-  async sendWebhookRequest(payload) {
-    // Use Node.js built-in fetch (available in v18+)
+  async sendWebhookRequest(payload, url) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.webhookTimeout);
 
     try {
-      const response = await fetch(this.webhookUrl, {
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'User-Agent': 'SiteScope-AI-Webhook/1.0'
+          'User-Agent': 'SiteScope-AI-Webhook/1.0',
         },
         body: JSON.stringify(payload),
-        signal: controller.signal
+        signal: controller.signal,
       });
 
       clearTimeout(timeout);
@@ -267,12 +223,8 @@ class AIWebhookService {
       }
 
       const aiReport = await response.json();
-      
-      // Validate the response structure
       this.validateAIReportResponse(aiReport);
-      
       return aiReport;
-
     } finally {
       clearTimeout(timeout);
     }
@@ -346,7 +298,7 @@ class AIWebhookService {
    * @returns {boolean} True if webhook URL is configured
    */
   isConfigured() {
-    return !!this.webhookUrl;
+    return !!this.pageAnalyzerUrl && !!this.crawlAnalyzerUrl;
   }
 
   /**
@@ -355,7 +307,8 @@ class AIWebhookService {
    */
   getConfig() {
     return {
-      webhookUrl: this.webhookUrl ? '[CONFIGURED]' : '[NOT CONFIGURED]',
+      pageAnalyzerUrl: this.pageAnalyzerUrl ? '[CONFIGURED]' : '[NOT CONFIGURED]',
+      crawlAnalyzerUrl: this.crawlAnalyzerUrl ? '[CONFIGURED]' : '[NOT CONFIGURED]',
       timeout: this.webhookTimeout,
       maxRetries: this.maxRetries,
       retryDelay: this.retryDelay

@@ -596,9 +596,9 @@ class CrawlProcessor {
   async finalizeCrawl(jobId) {
     console.log(`📊 Calculating link scores for job ${jobId}...`);
     await this.calculateLinkScoresAndRelationships(jobId);
-    
+
     const finalCount = await this.prisma.internalLink.count({ where: { jobId } });
-    
+
     await this.updateJobStatus(jobId, 'completed', {
       completedAt: new Date(),
       pagesCrawled: finalCount,
@@ -606,35 +606,15 @@ class CrawlProcessor {
     });
 
     // Process AI report if requested
-    await this.processAIReport(jobId);
+    const job = await this.prisma.crawlJob.findUnique({ where: { id: jobId } });
+    if (job.ai) {
+      const AIWebhookService = require('./aiWebhookService');
+      const aiService = new AIWebhookService();
+      await aiService.processAIReport(jobId);
+    }
 
     // Send email report if enabled
     await this.sendEmailReport(jobId);
-  }
-
-  /**
-   * Process AI report generation for completed crawl
-   * @param {number} jobId - The completed job ID
-   */
-  async processAIReport(jobId) {
-    try {
-      const AIWebhookService = require('./aiWebhookService');
-      const aiService = new AIWebhookService();
-      
-      // Process AI report asynchronously to avoid blocking crawl completion
-      setImmediate(async () => {
-        try {
-          await aiService.processAIReport(jobId);
-        } catch (error) {
-          console.error(`❌ AI report processing failed for job ${jobId}:`, error.message);
-        } finally {
-          await aiService.close();
-        }
-      });
-      
-    } catch (error) {
-      console.error(`❌ Failed to initialize AI report processing for job ${jobId}:`, error.message);
-    }
   }
 
   /**
