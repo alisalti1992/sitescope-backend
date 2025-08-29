@@ -9,6 +9,7 @@
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
+    "node-cron": "^4.2.1",
     "node-fetch": "^3.3.2",
     "nodemailer": "^7.0.5",
     "puppeteer": "^24.17.0",

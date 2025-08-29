@@ -68,7 +68,7 @@ const prisma = new PrismaClient();
  */
 router.post("/", authenticateToken, requireUser, async (req, res) => {
   try {
-    const { url, maxPages, ai, email, takeScreenshots = true, sampledCrawl = false, ignoreUrlParameters = false } = req.body;
+    const { url, maxPages, ai, email, takeScreenshots = true, sampledCrawl = false, ignoreUrlParameters = false, requireEmailVerification = true } = req.body;
 
     // Validate required fields
     if (!url || !maxPages || ai === undefined || !email) {
@@ -123,6 +123,16 @@ router.post("/", authenticateToken, requireUser, async (req, res) => {
       });
     }
 
+    // Validate requireEmailVerification if provided
+    if (requireEmailVerification !== undefined && typeof requireEmailVerification !== "boolean") {
+      return res.status(400).json({
+        error: "Invalid field types",
+        expected: {
+          requireEmailVerification: "boolean"
+        }
+      });
+    }
+
     // Create crawl job in database
     // Note: robots.txt and sitemaps are always crawled automatically
     const crawlJob = await prisma.crawlJob.create({
@@ -134,14 +144,63 @@ router.post("/", authenticateToken, requireUser, async (req, res) => {
         takeScreenshots,
         crawlSitemap: true, // Always enabled now
         sampledCrawl,
-        ignoreUrlParameters
+        ignoreUrlParameters,
+        requireEmailVerification
       }
     });
 
-    res.status(201).json({
-      message: "Crawl job created successfully",
-      job: crawlJob
-    });
+    // If email verification is required, send verification email
+    if (requireEmailVerification) {
+      const EmailVerificationService = require('../services/emailVerificationService');
+      const verificationService = new EmailVerificationService();
+      
+      try {
+        const verificationResult = await verificationService.sendVerificationEmail(crawlJob.id);
+        
+        if (verificationResult.success) {
+          res.status(201).json({
+            message: "Crawl job created successfully. Please check your email for verification code.",
+            job: crawlJob,
+            verification: {
+              required: true,
+              emailSent: true,
+              expiresAt: verificationResult.expiresAt
+            }
+          });
+        } else {
+          res.status(201).json({
+            message: "Crawl job created successfully, but verification email failed to send.",
+            job: crawlJob,
+            verification: {
+              required: true,
+              emailSent: false,
+              error: verificationResult.error
+            }
+          });
+        }
+        
+        await verificationService.close();
+      } catch (error) {
+        console.error('Error with verification email:', error);
+        res.status(201).json({
+          message: "Crawl job created successfully, but verification email failed to send.",
+          job: crawlJob,
+          verification: {
+            required: true,
+            emailSent: false,
+            error: "Failed to send verification email"
+          }
+        });
+      }
+    } else {
+      res.status(201).json({
+        message: "Crawl job created successfully",
+        job: crawlJob,
+        verification: {
+          required: false
+        }
+      });
+    }
 
   } catch (error) {
     console.error("Error creating crawl job:", error);
@@ -197,6 +256,11 @@ router.post("/", authenticateToken, requireUser, async (req, res) => {
  *           description: Whether to ignore URL parameters when crawling and storing links (optional, default false)
  *           example: false
  *           default: false
+ *         requireEmailVerification:
+ *           type: boolean
+ *           description: Whether to require email verification before starting the crawl (optional, default true)
+ *           example: true
+ *           default: true
  *     CrawlJob:
  *       type: object
  *       properties:
@@ -326,6 +390,46 @@ router.post("/", authenticateToken, requireUser, async (req, res) => {
  *         error:
  *           type: string
  *           description: Error message if AI report generation failed
+ *     VerificationStatus:
+ *       type: object
+ *       properties:
+ *         requiresVerification:
+ *           type: boolean
+ *           description: Whether the job requires email verification.
+ *         isVerified:
+ *           type: boolean
+ *           description: Whether the email has been verified.
+ *         verifiedAt:
+ *           type: string
+ *           format: date-time
+ *           description: The timestamp when the email was verified.
+ *         codeSentAt:
+ *           type: string
+ *           format: date-time
+ *           description: The timestamp when the verification code was sent.
+ *         codeExpiresAt:
+ *           type: string
+ *           format: date-time
+ *           description: The timestamp when the verification code expires.
+ *         isCodeExpired:
+ *           type: boolean
+ *           description: Whether the verification code has expired.
+ *         attemptsMade:
+ *           type: integer
+ *           description: The number of verification attempts made.
+ *         attemptsRemaining:
+ *           type: integer
+ *           description: The number of verification attempts remaining.
+ *         canRequestNewCode:
+ *           type: boolean
+ *           description: Whether a new code can be requested.
+ *         jobStatus:
+ *           type: string
+ *           description: The current status of the job.
+ *         email:
+ *           type: string
+ *           format: email
+ *           description: The email address associated with the job.
  */
 
 /**
@@ -343,7 +447,7 @@ router.post("/", authenticateToken, requireUser, async (req, res) => {
  *         name: status
  *         schema:
  *           type: string
- *           enum: [pending, running, completed, failed]
+ *           enum: [pending, running, completed, failed, waiting_verification]
  *         description: Filter jobs by status
  *       - in: query
  *         name: limit
@@ -687,6 +791,190 @@ router.post("/:id/send-email-report", authenticateToken, requireUser, async (req
   } catch (error) {
     console.error("Error sending email report:", error);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * @swagger
+ * /api/jobs/{id}/verify:
+ *   post:
+ *     summary: Verify a crawl job with a verification code
+ *     description: Submits a 6-digit verification code to verify and start a crawl job.
+ *     tags:
+ *       - Jobs
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: The ID of the crawl job to verify.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - code
+ *             properties:
+ *               code:
+ *                 type: string
+ *                 description: The 6-digit verification code sent to the user's email.
+ *                 example: "123456"
+ *     responses:
+ *       200:
+ *         description: Email verified successfully. The crawl job will start shortly.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Email verified successfully. Your crawl job will start processing shortly."
+ *       400:
+ *         description: Bad request, such as an invalid or expired code.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Job not found.
+ *       500:
+ *         description: Internal server error.
+ */
+router.post("/:id/verify", authenticateToken, requireUser, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { code } = req.body;
+
+    if (!code) {
+      return res.status(400).json({ error: "Verification code is required" });
+    }
+
+    const EmailVerificationService = require('../services/emailVerificationService');
+    const verificationService = new EmailVerificationService();
+
+    const result = await verificationService.verifyCode(parseInt(id), code);
+
+    if (result.success) {
+      // If verification is successful, the job status is updated to 'pending'.
+      // The main crawl processor will pick it up.
+      res.status(200).json({ message: result.message });
+    } else {
+      res.status(400).json({ error: result.error });
+    }
+
+    await verificationService.close();
+
+  } catch (error) {
+    console.error(`Error verifying job ${req.params.id}:`, error);
+    res.status(500).json({ error: "Failed to verify job" });
+  }
+});
+
+/**
+ * @swagger
+ * /api/jobs/{id}/resend-verification:
+ *   post:
+ *     summary: Resend verification code
+ *     description: Requests a new verification code to be sent to the user's email. This is rate-limited.
+ *     tags:
+ *       - Jobs
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: The ID of the crawl job.
+ *     responses:
+ *       200:
+ *         description: Verification email sent successfully.
+ *       400:
+ *         description: Bad request, such as if the email is already verified or rate limit is exceeded.
+ *       404:
+ *         description: Job not found.
+ *       500:
+ *         description: Internal server error.
+ */
+router.post("/:id/resend-verification", authenticateToken, requireUser, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const EmailVerificationService = require('../services/emailVerificationService');
+    const verificationService = new EmailVerificationService();
+
+    const result = await verificationService.resendVerificationCode(parseInt(id));
+
+    if (result.success) {
+      res.status(200).json({ message: result.message });
+    } else {
+      res.status(400).json({ error: result.error });
+    }
+
+    await verificationService.close();
+
+  } catch (error) {
+    console.error(`Error resending verification for job ${req.params.id}:`, error);
+    res.status(500).json({ error: "Failed to resend verification" });
+  }
+});
+
+/**
+ * @swagger
+ * /api/jobs/{id}/verification-status:
+ *   get:
+ *     summary: Get verification status
+ *     description: Retrieves the current email verification status for a specific crawl job.
+ *     tags:
+ *       - Jobs
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: The ID of the crawl job.
+ *     responses:
+ *       200:
+ *         description: The verification status of the job.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/VerificationStatus'
+ *       404:
+ *         description: Job not found.
+ *       500:
+ *         description: Internal server error.
+ */
+router.get("/:id/verification-status", authenticateToken, requireUser, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const EmailVerificationService = require('../services/emailVerificationService');
+    const verificationService = new EmailVerificationService();
+
+    const result = await verificationService.getVerificationStatus(parseInt(id));
+
+    if (result.success) {
+      res.status(200).json(result.status);
+    } else {
+      res.status(404).json({ error: result.error });
+    }
+
+    await verificationService.close();
+
+  } catch (error) {
+    console.error(`Error getting verification status for job ${req.params.id}:`, error);
+    res.status(500).json({ error: "Failed to get verification status" });
   }
 });
 
