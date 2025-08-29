@@ -9,7 +9,7 @@ Choose one of the following development approaches:
 - No other dependencies required
 
 ### Option 2: Local Development
-- Node.js (v16 or higher)
+- Node.js (v18 or higher)
 - PostgreSQL database
 - npm or yarn package manager
 
@@ -28,7 +28,7 @@ cd sitescope-backend
 npm run docker:dev
 ```
 
-That's it! The application will be available at `http://localhost:4000` with:
+That's it! The application will be available at `http://localhost:5000` with:
 - Automatic code reloading when you change files
 - PostgreSQL database automatically configured
 - All dependencies handled in containers
@@ -61,12 +61,19 @@ If you prefer to run Node.js locally:
 
 #### 1. Environment Setup
 
-Create a `.env` file in the root directory:
+Create a `.env` file in the root directory. You can copy the `.env.example` file.
 
 ```env
 DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres"
-PORT=4000
+PORT=5000
 NODE_ENV=development
+
+# AI Webhook Configuration (Optional)
+PAGE_ANALYZER_WEBHOOK_URL="https://your-ai-service.com/analyze-page"
+CRAWL_ANALYZER_WEBHOOK_URL="https://your-ai-service.com/analyze-crawl"
+AI_WEBHOOK_TIMEOUT=30000
+AI_WEBHOOK_MAX_RETRIES=3
+AI_WEBHOOK_RETRY_DELAY=5000
 ```
 
 #### 2. Database Setup
@@ -82,7 +89,7 @@ docker-compose up postgres -d
 npm install
 
 # Run database migrations
-npm run prisma:migrate
+npx prisma migrate dev
 
 # Generate Prisma client
 npx prisma generate
@@ -97,7 +104,7 @@ npm run dev
 
 This will start:
 - Nodemon for automatic server restart on file changes
-- Server on port 4000 (or PORT from .env)
+- Server on port 5000 (or PORT from .env)
 
 ## Development Scripts
 
@@ -107,7 +114,7 @@ This will start:
 | `npm run dev` | Start development server with hot reload |
 | `npm start` | Start production server |
 | `npm run prisma:dev` | Start Prisma development mode |
-| `npm run prisma:migrate` | Run database migrations with reset |
+| `npx prisma migrate dev` | Run database migrations |
 
 ### Docker Development
 | Command | Description |
@@ -125,6 +132,7 @@ This will start:
 
 - **Express Server** (`src/server.js`) - Main application server
 - **Background Processor** (`src/services/crawlProcessor.js`) - Handles crawl job processing
+- **AI Webhook Service** (`src/services/aiWebhookService.js`) - Handles AI report generation
 - **API Routes** (`src/routes/`) - REST endpoint definitions
 - **Database Schema** (`prisma/schema.prisma`) - Data models and relationships
 
@@ -137,6 +145,8 @@ This will start:
 5. **Link Analysis** - Internal/external link tracking with relationship mapping
 6. **REST API** - Full CRUD operations for jobs and pages
 7. **Swagger Documentation** - Interactive API documentation at `/api-docs`
+8. **Email Verification** - Requires email verification before starting a crawl job
+9. **Two-step AI Analysis** - Scalable AI analysis for large websites
 
 ## Database Schema
 
@@ -146,7 +156,9 @@ The application uses Prisma ORM with PostgreSQL. Key entities:
 - **InternalLink** - Crawled pages with comprehensive SEO data and metrics
 - **ExternalLink** - External links found during crawling
 - **Inlink** - Link relationships between pages (internal and external)
-- **User** - User management (if applicable)
+- **User** - User management
+- **ApiToken** - API tokens for authentication
+- **Sitemap** - Sitemap data
 
 ## API Development
 
@@ -182,9 +194,10 @@ The crawl processor (`src/services/crawlProcessor.js`) automatically:
 3. Processes jobs using Crawlee and Puppeteer
 4. Extracts comprehensive SEO data (meta tags, headings, performance metrics)
 5. Analyzes internal/external link relationships
-6. Updates job status (pending → running → completed/failed)
+6. Updates job status (pending → waiting_verification → running → completed/failed)
 7. Stores extracted data and screenshots
 8. Handles error cases and retries
+9. Triggers two-step AI analysis if requested
 
 ## File Storage
 
@@ -200,11 +213,11 @@ The crawl processor (`src/services/crawlProcessor.js`) automatically:
 
 ### 2. Database Changes
 - Update `prisma/schema.prisma`
-- Run `npm run prisma:migrate`
+- Run `npx prisma migrate dev`
 - Restart development server
 
 ### 3. Testing API
-- Use Swagger UI at `http://localhost:4000/api-docs`
+- Use Swagger UI at `http://localhost:5000/api-docs`
 - Test endpoints with sample data
 - Check database for expected changes
 
@@ -214,8 +227,8 @@ The crawl processor (`src/services/crawlProcessor.js`) automatically:
 
 1. **Port already in use**
    ```bash
-   # Find process using port 4000
-   netstat -ano | findstr :4000
+   # Find process using port 5000
+   netstat -ano | findstr :5000
    # Kill process by PID
    taskkill /PID <PID> /F
    ```

@@ -14,6 +14,8 @@ A powerful web crawling backend service built with Crawlee, Express, and Postgre
 - 🔗 **REST API** - Complete CRUD operations for jobs and pages
 - 📖 **API Documentation** - Interactive Swagger/OpenAPI documentation
 - ⚡ **Real-time Status** - Live job status updates and monitoring
+- 📧 **Email Verification** - Requires email verification before starting a crawl job
+- 🤖 **Two-step AI Analysis** - Scalable AI analysis for large websites
 
 ## Quick Start
 
@@ -30,7 +32,7 @@ cd sitescope-backend
 npm run docker:dev
 ```
 
-That's it! The server will start on `http://localhost:4000` with:
+That's it! The server will start on `http://localhost:5000` with:
 - Automatic hot reload on code changes
 - PostgreSQL database automatically configured
 - API documentation available at `/api-docs`
@@ -40,7 +42,7 @@ That's it! The server will start on `http://localhost:4000` with:
 If you prefer running locally:
 
 #### Prerequisites
-- Node.js 16+
+- Node.js 18+
 - PostgreSQL (or use Docker for database only)
 - npm
 
@@ -62,13 +64,13 @@ cp .env.example .env
 docker-compose up postgres -d
 
 # Set up database
-npm run prisma:migrate
+npx prisma migrate dev
 
 # Start development server
 npm run dev
 ```
 
-The server will start on `http://localhost:4000` with API documentation available at `/api-docs`.
+The server will start on `http://localhost:5000` with API documentation available at `/api-docs`.
 
 ## API Endpoints
 
@@ -79,6 +81,9 @@ The server will start on `http://localhost:4000` with API documentation availabl
 | GET | `/jobs` | List all jobs with filtering |
 | GET | `/jobs/{id}` | Get specific job details |
 | GET | `/jobs/{id}/pages/{pageId}` | Get detailed page data |
+| POST | `/jobs/{id}/verify` | Verify a crawl job with a verification code |
+| POST | `/jobs/{id}/resend-verification` | Resend verification code for a crawl job |
+| GET | `/jobs/{id}/verification-status` | Get verification status for a crawl job |
 
 ### System
 | Method | Endpoint | Description |
@@ -92,7 +97,7 @@ The server will start on `http://localhost:4000` with API documentation availabl
 ### Create a Crawl Job
 
 ```bash
-curl -X POST http://localhost:4000/jobs \
+curl -X POST http://localhost:5000/jobs \
   -H "Content-Type: application/json" \
   -d '{
     "url": "https://example.com",
@@ -107,13 +112,13 @@ curl -X POST http://localhost:4000/jobs \
 ### Check Job Status
 
 ```bash
-curl http://localhost:4000/jobs/1
+curl http://localhost:5000/jobs/1
 ```
 
 ### Get Page Data
 
 ```bash
-curl http://localhost:4000/jobs/1/pages/1
+curl http://localhost:5000/jobs/1/pages/1
 ```
 
 ## Technology Stack
@@ -136,12 +141,16 @@ sitescope-backend/
 │   │   ├── health.js         # Health check
 │   │   └── users.js          # User management
 │   ├── services/
-│   │   └── crawlProcessor.js  # Background crawl processor
+│   │   ├── crawlProcessor.js  # Background crawl processor
+│   │   └── aiWebhookService.js # Service for handling AI webhooks
 │   └── config/
 │       └── swaggerOptions.js  # API documentation config
 ├── prisma/
 │   ├── schema.prisma         # Database schema
 │   └── migrations/           # Database migrations
+├── prompts/
+│   ├── page-analyzer-prompt.md
+│   └── crawl-analyzer-prompt.md
 ├── storage/
 │   └── screenshots/          # Screenshot storage
 └── DEVELOPMENT.md            # Development guide
@@ -150,10 +159,12 @@ sitescope-backend/
 ## How It Works
 
 1. **Job Creation**: Submit crawl jobs via REST API with target URLs and configuration
-2. **Background Processing**: Automated processor checks for pending jobs every 10 seconds
-3. **Web Crawling**: Crawlee with Puppeteer extracts data, captures screenshots, follows links
-4. **Data Storage**: Results stored in PostgreSQL with comprehensive page metadata
-5. **Status Tracking**: Real-time job status updates (pending → running → completed/failed)
+2. **Email Verification**: If enabled, an email with a verification code is sent to the user
+3. **Background Processing**: Automated processor checks for pending jobs every 10 seconds
+4. **Web Crawling**: Crawlee with Puppeteer extracts data, captures screenshots, follows links
+5. **Data Storage**: Results stored in PostgreSQL with comprehensive page metadata
+6. **AI Analysis**: If enabled, a two-step AI analysis is performed on the crawled data
+7. **Status Tracking**: Real-time job status updates (pending → waiting_verification → running → completed/failed)
 
 ## Development
 
@@ -180,7 +191,7 @@ npm run dev
 npm start
 
 # Database operations
-npm run prisma:migrate
+npx prisma migrate dev
 ```
 
 ## Configuration
@@ -189,8 +200,10 @@ Key environment variables:
 
 ```env
 DATABASE_URL="postgresql://user:password@localhost:5432/sitescope_db"
-PORT=4000
+PORT=5000
 NODE_ENV=development
+PAGE_ANALYZER_WEBHOOK_URL="https://your-ai-service.com/analyze-page"
+CRAWL_ANALYZER_WEBHOOK_URL="https://your-ai-service.com/analyze-crawl"
 ```
 
 ## Contributing
