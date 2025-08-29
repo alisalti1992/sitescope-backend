@@ -1,0 +1,18 @@
+Verify Your Crawl Job - {{projectName}}
+
+Hello!
+
+You've requested a crawl analysis for: {{url}}
+
+To start your crawl job, please verify your email address using this 6-digit code:
+
+{{verificationCode}}
+
+You can also verify by visiting: {{verifyUrl}}
+
+This code will expire in 24 hours.
+
+If you didn't request this crawl, you can safely ignore this email.
+
+---
+{{projectName}} Crawler
