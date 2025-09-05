@@ -35,5 +35,5 @@ RUN mkdir -p storage/screenshots && chown -R myuser:myuser storage
 EXPOSE 5000
 
 # Use nodemon for development to watch file changes
-# Start XVFB and run the application
+# Start XVFB and run the application with automatic migrations
 CMD xvfb-run -a -s "-ac -screen 0 1920x1080x24+32 -nolisten tcp" sh -c "npx nodemon src/server.js || npm start"

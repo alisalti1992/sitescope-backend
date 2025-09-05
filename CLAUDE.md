@@ -14,13 +14,16 @@ This is a sitescope-backend project - a comprehensive SEO web crawling service b
 ## Development Commands
 
 ### Local Development
-- `npm run dev` - Start development server with hot reload
-- `npm start` - Start production server
+- `npm run dev` - Start development server with hot reload (includes auto-migration)
+- `npm start` - Start production server (includes auto-migration)
 - `npm run prisma:migrate` - Run database migrations with reset
 - `npm run prisma:dev` - Start Prisma development mode
+- `npm run prisma:deploy` - Deploy pending migrations (production-safe)
+- `npm run prisma:status` - Check migration status
+- `npm run migrate` - Run migrations and generate client
 
 ### Docker Development
-- `npm run docker:dev` - Start development with Docker (rebuild + start)
+- `npm run docker:dev` - Start development with Docker (rebuild + start + auto-migrate)
 - `npm run docker:up` - Start Docker services (without rebuild)
 - `npm run docker:down` - Stop all Docker services
 - `npm run docker:build` - Build Docker containers
@@ -40,6 +43,8 @@ This is a sitescope-backend project - a comprehensive SEO web crawling service b
 ### Other Endpoints
 - `GET /health` - Health check
 - `GET /users` - User management
+- `GET /migration/status` - Database migration status
+- `POST /migration/apply` - Manually trigger migrations
 - `GET /api-docs` - Swagger documentation
 
 ## Project Structure
