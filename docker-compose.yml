@@ -54,6 +54,9 @@ services:
       - TOKEN_EXPIRY=24h
       - DEFAULT_ADMIN_EMAIL=admin@sitescope.com
       - DEFAULT_ADMIN_PASSWORD=admin123
+      - AUTO_MIGRATE=true
+      - MIGRATION_TIMEOUT=60000
+      - SKIP_SEED=1
     depends_on:
       - postgres
     networks:
