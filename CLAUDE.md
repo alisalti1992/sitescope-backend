@@ -8,12 +8,24 @@ This is a sitescope-backend project - a comprehensive SEO web crawling service b
 - **PostgreSQL** as the database
 - **Swagger** for API documentation
 - **Automatic sitemap discovery** for comprehensive crawling
+- **Email verification** for crawl jobs
+- **Two-step AI analysis** for scalability
 
 ## Development Commands
+
+### Local Development
 - `npm run dev` - Start development server with hot reload
 - `npm start` - Start production server
-- `npm run prisma:migrate` - Run database migrations
+- `npm run prisma:migrate` - Run database migrations with reset
 - `npm run prisma:dev` - Start Prisma development mode
+
+### Docker Development
+- `npm run docker:dev` - Start development with Docker (rebuild + start)
+- `npm run docker:up` - Start Docker services (without rebuild)
+- `npm run docker:down` - Stop all Docker services
+- `npm run docker:build` - Build Docker containers
+- `npm run docker:logs` - View application logs
+- `npm run docker:shell` - Access shell inside app container
 
 ## API Endpoints
 ### Jobs Management
@@ -21,6 +33,9 @@ This is a sitescope-backend project - a comprehensive SEO web crawling service b
 - `GET /jobs` - List all crawl jobs (with filtering)
 - `GET /jobs/{id}` - Get specific job details
 - `GET /jobs/{id}/pages/{pageId}` - Get detailed page data
+- `POST /jobs/{id}/verify` - Verify a crawl job with a verification code
+- `POST /jobs/{id}/resend-verification` - Resend verification code for a crawl job
+- `GET /jobs/{id}/verification-status` - Get verification status for a crawl job
 
 ### Other Endpoints
 - `GET /health` - Health check
@@ -31,18 +46,21 @@ This is a sitescope-backend project - a comprehensive SEO web crawling service b
 - `src/server.js` - Main server entry point
 - `src/routes/jobs.js` - Job management endpoints
 - `src/services/crawlProcessor.js` - Background crawl processor
+- `src/services/aiWebhookService.js` - Service for handling AI webhooks
 - `src/config/` - Configuration files
 - `prisma/schema.prisma` - Database schema
+- `prompts/` - Prompts for AI analysis
 - `storage/screenshots/` - Screenshot storage directory
 
 ## Background Processing
 - Crawl processor checks for pending jobs every 10 seconds
-- Automatically processes jobs: pending → running → completed/failed
+- Automatically processes jobs: pending → waiting_verification → running → completed/failed
 - Captures comprehensive page data and screenshots
 - Stores results in `InternalLink` and `ExternalLink` tables with comprehensive SEO data
+- Performs two-step AI analysis (page-level and crawl-level)
 
 ## Environment
-- Server runs on port 4000
+- Server runs on port 5000
 - Uses PostgreSQL database via Prisma
 - Environment variables configured in `.env`
 - Background crawl processor starts automatically

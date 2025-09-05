@@ -320,96 +320,26 @@ class EmailVerificationService {
    * @returns {Object} Email content with text and html
    */
   generateVerificationEmail(job, verificationCode) {
+    const fs = require('fs');
+    const path = require('path');
+
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     const verifyUrl = `${frontendUrl}/verify/${job.id}`;
 
-    const text = `
-Verify Your Crawl Job - SiteScope
+    const textTemplate = fs.readFileSync(path.join(__dirname, '../../views/emails/verificationEmail.txt'), 'utf8');
+    const htmlTemplate = fs.readFileSync(path.join(__dirname, '../../views/emails/verificationEmail.html'), 'utf8');
 
-Hello!
+    const replacements = {
+      projectName: process.env.PROJECT_NAME || 'SiteScope',
+      url: job.url,
+      verificationCode,
+      verifyUrl,
+      maxPages: job.maxPages,
+      ai: job.ai ? 'Yes' : 'No',
+    };
 
-You've requested a crawl analysis for: ${job.url}
-
-To start your crawl job, please verify your email address using this 6-digit code:
-
-${verificationCode}
-
-You can also verify by visiting: ${verifyUrl}
-
-This code will expire in 24 hours.
-
-If you didn't request this crawl, you can safely ignore this email.
-
----
-SiteScope Crawler
-    `.trim();
-
-    const html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Verify Your Crawl Job</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #333; margin: 0; padding: 20px; background-color: #f5f5f5; }
-    .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-    .header { background: linear-gradient(135deg, #EC3737, #b91c1c); color: white; padding: 24px; text-align: center; }
-    .header h1 { margin: 0; font-size: 24px; }
-    .header p { margin: 8px 0 0 0; opacity: 0.9; }
-    .content { padding: 32px 24px; }
-    .verification-code { background: #f8f9fa; border: 2px dashed #EC3737; border-radius: 8px; padding: 24px; text-align: center; margin: 24px 0; }
-    .code-display { font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #EC3737; font-family: 'Courier New', monospace; }
-    .code-label { font-size: 14px; color: #6b7280; margin-bottom: 8px; }
-    .website-info { background: #f8f9fa; padding: 16px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #EC3737; }
-    .cta-button { display: inline-block; background: #EC3737; color: white !important; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; text-align: center; margin: 20px 0; }
-    .cta-button:hover { background: #b91c1c; }
-    .footer { background: #f8f9fa; padding: 16px 24px; text-align: center; font-size: 12px; color: #6b7280; }
-    .expiry-info { color: #ea580c; font-weight: 600; margin: 16px 0; text-align: center; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>🔐 Verify Your Email</h1>
-      <p>Complete your crawl job setup</p>
-    </div>
-    
-    <div class="content">
-      <p>Hello!</p>
-      
-      <p>You've requested a crawl analysis for:</p>
-      
-      <div class="website-info">
-        <strong>🌐 ${job.url}</strong><br>
-        <small>Max pages: ${job.maxPages} | AI Analysis: ${job.ai ? 'Yes' : 'No'}</small>
-      </div>
-      
-      <p>To start your crawl job, please verify your email address using this 6-digit code:</p>
-      
-      <div class="verification-code">
-        <div class="code-label">Your Verification Code</div>
-        <div class="code-display">${verificationCode}</div>
-      </div>
-      
-      <div style="text-align: center;">
-        <a href="${verifyUrl}" class="cta-button">🔗 Verify Online</a>
-      </div>
-      
-      <div class="expiry-info">
-        ⏰ This code expires in 24 hours
-      </div>
-      
-      <p><small>If you didn't request this crawl, you can safely ignore this email.</small></p>
-    </div>
-
-    <div class="footer">
-      Powered by SiteScope | Secure Web Crawling & Analysis
-    </div>
-  </div>
-</body>
-</html>
-    `.trim();
+    const text = textTemplate.replace(/{{(.*?)}}/g, (match, key) => replacements[key.trim()]);
+    const html = htmlTemplate.replace(/{{(.*?)}}/g, (match, key) => replacements[key.trim()]);
 
     return { text, html };
   }

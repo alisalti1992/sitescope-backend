@@ -34,7 +34,28 @@ services:
     environment:
       - NODE_ENV=development
       - PORT=5000
+      - BASE_URL=http://localhost:5000
+      - PROJECT_NAME="SiteScope"
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/postgres
+      - PAGE_ANALYZER_WEBHOOK_URL="https://your-ai-service.com/analyze-page"
+      - CRAWL_ANALYZER_WEBHOOK_URL="https://your-ai-service.com/analyze-crawl"
+      - AI_WEBHOOK_TIMEOUT=30000
+      - AI_WEBHOOK_MAX_RETRIES=3
+      - AI_WEBHOOK_RETRY_DELAY=5000
+      - FEATURE_EMAIL_REPORTS=true
+      - SMTP_HOST=smtp.example.com
+      - SMTP_PORT=587
+      - SMTP_USER=username
+      - SMTP_PASS=password
+      - SMTP_SECURE=false
+      - SMTP_FROM="SiteScope Crawler <noreply@sitescope.com>"
+      - SMTP_BCC="user@example.com"
+      - FRONTEND_URL=http://localhost:3000
+      - FEATURE_USER_MANAGEMENT=true
+      - JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+      - TOKEN_EXPIRY=24h
+      - DEFAULT_ADMIN_EMAIL=admin@sitescope.com
+      - DEFAULT_ADMIN_PASSWORD=admin123
     depends_on:
       - postgres
     networks:

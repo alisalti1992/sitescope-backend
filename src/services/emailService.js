@@ -234,124 +234,45 @@ class EmailService {
    * @returns {Object} Email content with text and html properties
    */
   generateEmailContent(jobData) {
+    const fs = require('fs');
+    const path = require('path');
+
     const duration = this.calculateDuration(jobData.startedAt, jobData.completedAt);
     const stats = jobData.statistics;
 
-    // Text version
-    const text = `
-🕷️ SiteScope Crawl Completed
+    const textTemplate = fs.readFileSync(path.join(__dirname, '../../views/emails/jobCompletionEmail.txt'), 'utf8');
+    const htmlTemplate = fs.readFileSync(path.join(__dirname, '../../views/emails/jobCompletionEmail.html'), 'utf8');
 
-Website: ${jobData.url}
-Status: ${jobData.status}
-Duration: ${duration}
+    const replacements = {
+      projectName: process.env.PROJECT_NAME || 'SiteScope',
+      url: jobData.url,
+      status: jobData.status,
+      duration,
+      pagesCrawled: jobData.pagesCrawled,
+      maxPages: jobData.maxPages,
+      totalWords: (stats.totalWords || 0).toLocaleString(),
+      avgResponseTime: stats.avgResponseTime || 0,
+      indexablePages: stats.indexablePages || 0,
+      nonIndexablePages: stats.nonIndexablePages || 0,
+      topPages: jobData.internalLinks.slice(0, 5).map((page, index) => 
+        `${index + 1}. ${page.title || page.address} (Score: ${page.linkScore || 0})`
+      ).join('\n'),
+      reportUrl: jobData.reportUrl,
+      generatedAt: new Date().toLocaleString(),
+    };
 
-📊 Summary:
-• Pages Crawled: ${jobData.pagesCrawled} of ${jobData.maxPages} max
-• Total Words: ${stats.totalWords?.toLocaleString() || 'N/A'}
-• Average Response Time: ${stats.avgResponseTime || 'N/A'}ms
-• Indexable Pages: ${stats.indexablePages || 0}
-• Non-Indexable Pages: ${stats.nonIndexablePages || 0}
-
-🔝 Top Performing Pages:
-${jobData.internalLinks.slice(0, 5).map((page, index) => 
-  `${index + 1}. ${page.title || page.address} (Score: ${page.linkScore || 0})`
-).join('\n')}
-
-📈 View Full Report:
-${jobData.reportUrl}
-
-Generated: ${new Date().toLocaleString()}
-    `.trim();
-
-    // HTML version
-    const html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Crawl Report - ${jobData.url}</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #333; margin: 0; padding: 20px; background-color: #f5f5f5; }
-    .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-    .header { background: linear-gradient(135deg, #EC3737, #b91c1c); color: white; padding: 24px; text-align: center; }
-    .header h1 { margin: 0; font-size: 24px; }
-    .header p { margin: 8px 0 0 0; opacity: 0.9; }
-    .content { padding: 24px; }
-    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
-    .stat-card { background: #f8f9fa; padding: 16px; border-radius: 6px; text-align: center; border-left: 4px solid #EC3737; }
-    .stat-number { font-size: 24px; font-weight: bold; color: #EC3737; margin: 0; }
-    .stat-label { font-size: 14px; color: #6b7280; margin: 4px 0 0 0; }
-    .section { margin: 24px 0; }
-    .section h3 { color: #1f2937; font-size: 18px; margin: 0 0 12px 0; border-bottom: 2px solid #EC3737; padding-bottom: 4px; }
-    .page-list { list-style: none; padding: 0; margin: 0; }
-    .page-item { background: #f8f9fa; margin: 8px 0; padding: 12px; border-radius: 4px; border-left: 3px solid #EC3737; }
-    .page-title { font-weight: 600; color: #1f2937; margin: 0 0 4px 0; }
-    .page-url { font-size: 12px; color: #6b7280; word-break: break-all; }
-    .cta-button { display: inline-block; background: #EC3737; color: white !important; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; text-align: center; margin: 20px 0; }
-    .cta-button:hover { background: #b91c1c; color: white !important; }
-    .header a { color: white !important; text-decoration: none; }
-    .header a:hover { color: rgba(255,255,255,0.8) !important; }
-    .footer { background: #f8f9fa; padding: 16px 24px; text-align: center; font-size: 12px; color: #6b7280; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>🕷️ SiteScope Crawl Completed</h1>
-      <p>${jobData.url}</p>
-    </div>
-    
-    <div class="content">
-      <div class="stat-grid">
-        <div class="stat-card">
-          <p class="stat-number">${jobData.pagesCrawled}</p>
-          <p class="stat-label">Pages Crawled</p>
-        </div>
-        <div class="stat-card">
-          <p class="stat-number">${duration}</p>
-          <p class="stat-label">Duration</p>
-        </div>
-        <div class="stat-card">
-          <p class="stat-number">${(stats.totalWords || 0).toLocaleString()}</p>
-          <p class="stat-label">Total Words</p>
-        </div>
-        <div class="stat-card">
-          <p class="stat-number">${stats.avgResponseTime || 0}ms</p>
-          <p class="stat-label">Avg Response Time</p>
-        </div>
-      </div>
-
-      <div class="section">
-        <h3>📄 Indexability Summary</h3>
-        <p><strong>Indexable Pages:</strong> ${stats.indexablePages || 0}</p>
-        <p><strong>Non-Indexable Pages:</strong> ${stats.nonIndexablePages || 0}</p>
-      </div>
-
-      <div class="section">
-        <h3>🔝 Top Performing Pages</h3>
-        <ul class="page-list">
-          ${jobData.internalLinks.slice(0, 5).map(page => `
-            <li class="page-item">
-              <p class="page-title">${page.title || 'Untitled'}</p>
-              <p class="page-url">${page.address}</p>
-            </li>
-          `).join('')}
-        </ul>
-      </div>
-
-      <div style="text-align: center;">
-        <a href="${jobData.reportUrl}" class="cta-button">📈 View Full Report</a>
-      </div>
-    </div>
-
-    <div class="footer">
-      Generated on ${new Date().toLocaleString()} | Powered by SiteScope
-    </div>
-  </div>
-</body>
-</html>
-    `.trim();
+    const text = textTemplate.replace(/{{(.*?)}}/g, (match, key) => replacements[key.trim()]);
+    const html = htmlTemplate.replace(/{{(.*?)}}/g, (match, key) => {
+      if (key.trim() === 'topPages') {
+        return jobData.internalLinks.slice(0, 5).map(page => `
+          <li class="page-item">
+            <p class="page-title">${page.title || 'Untitled'}</p>
+            <p class="page-url">${page.address}</p>
+          </li>
+        `).join('');
+      }
+      return replacements[key.trim()];
+    });
 
     return { text, html };
   }

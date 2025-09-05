@@ -1,0 +1,20 @@
+🕷️ {{projectName}} Crawl Completed
+
+Website: {{url}}
+Status: {{status}}
+Duration: {{duration}}
+
+📊 Summary:
+• Pages Crawled: {{pagesCrawled}} of {{maxPages}} max
+• Total Words: {{totalWords}}
+• Average Response Time: {{avgResponseTime}}ms
+• Indexable Pages: {{indexablePages}}
+• Non-Indexable Pages: {{nonIndexablePages}}
+
+🔝 Top Performing Pages:
+{{topPages}}
+
+📈 View Full Report:
+{{reportUrl}}
+
+Generated: {{generatedAt}}
