@@ -12,10 +12,20 @@ This is a sitescope-backend project - a comprehensive SEO web crawling service b
 - **Two-step AI analysis** for scalability
 
 ## Development Commands
+
+### Local Development
 - `npm run dev` - Start development server with hot reload
 - `npm start` - Start production server
-- `npm run prisma:migrate` - Run database migrations
+- `npm run prisma:migrate` - Run database migrations with reset
 - `npm run prisma:dev` - Start Prisma development mode
+
+### Docker Development
+- `npm run docker:dev` - Start development with Docker (rebuild + start)
+- `npm run docker:up` - Start Docker services (without rebuild)
+- `npm run docker:down` - Stop all Docker services
+- `npm run docker:build` - Build Docker containers
+- `npm run docker:logs` - View application logs
+- `npm run docker:shell` - Access shell inside app container
 
 ## API Endpoints
 ### Jobs Management

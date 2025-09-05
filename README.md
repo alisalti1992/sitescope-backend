@@ -25,7 +25,7 @@ The easiest way to get started - no dependencies needed except Docker.
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/alisalti1992/sitescope-backend
 cd sitescope-backend
 
 # Start everything with Docker
@@ -50,7 +50,7 @@ If you prefer running locally:
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/alisalti1992/sitescope-backend
 cd sitescope-backend
 
 # Install dependencies
@@ -196,14 +196,31 @@ npx prisma migrate dev
 
 ## Configuration
 
-Key environment variables:
+Key environment variables (copy from `.env.example`):
 
 ```env
-DATABASE_URL="postgresql://user:password@localhost:5432/sitescope_db"
+# Server Config
 PORT=5000
-NODE_ENV=development
+BASE_URL=http://localhost:5000
+PROJECT_NAME="SiteScope"
+
+# Database
+DATABASE_URL="postgresql://user:password@localhost:5432/sitescope_db"
+
+# AI Webhook Configuration (Optional)
 PAGE_ANALYZER_WEBHOOK_URL="https://your-ai-service.com/analyze-page"
 CRAWL_ANALYZER_WEBHOOK_URL="https://your-ai-service.com/analyze-crawl"
+
+# Email Reports (Optional)
+FEATURE_EMAIL_REPORTS=true
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=username
+SMTP_PASS=password
+
+# User Management (Optional)
+FEATURE_USER_MANAGEMENT=true
+JWT_SECRET=your-super-secret-jwt-key
 ```
 
 ## Contributing

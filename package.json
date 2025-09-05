@@ -1,9 +1,9 @@
 {
   "name": "sitescope-backend",
   "version": "0.0.1",
-  "description": "This is an example of a Crawlee project.",
+  "description": "A powerful web crawling backend service built with Crawlee, Express, and PostgreSQL for comprehensive SEO analysis and data extraction.",
   "dependencies": {
-    "@prisma/client": "^6.14.0",
+    "@prisma/client": "^6.15.0",
     "bcryptjs": "^3.0.2",
     "crawlee": "^3.14.1",
     "dotenv": "^17.2.1",
@@ -33,6 +33,6 @@
   "license": "ISC",
   "devDependencies": {
     "nodemon": "^3.1.10",
-    "prisma": "^6.14.0"
+    "prisma": "^6.15.0"
   }
 }

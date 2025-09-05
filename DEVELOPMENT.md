@@ -21,7 +21,7 @@ This is the easiest way to get started. Everything runs in containers with hot r
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/alisalti1992/sitescope-backend
 cd sitescope-backend
 
 # Start development environment (builds and starts all services)
@@ -64,9 +64,13 @@ If you prefer to run Node.js locally:
 Create a `.env` file in the root directory. You can copy the `.env.example` file.
 
 ```env
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres"
+# Server Config
 PORT=5000
-NODE_ENV=development
+BASE_URL=http://localhost:5000
+PROJECT_NAME="SiteScope"
+
+# Postgres Database Config
+DATABASE_URL="postgresql://myuser:mypassword@localhost:5432/mydatabase?schema=public"
 
 # AI Webhook Configuration (Optional)
 PAGE_ANALYZER_WEBHOOK_URL="https://your-ai-service.com/analyze-page"
@@ -74,6 +78,24 @@ CRAWL_ANALYZER_WEBHOOK_URL="https://your-ai-service.com/analyze-crawl"
 AI_WEBHOOK_TIMEOUT=30000
 AI_WEBHOOK_MAX_RETRIES=3
 AI_WEBHOOK_RETRY_DELAY=5000
+
+# Email Report Configuration (Optional)
+FEATURE_EMAIL_REPORTS=true
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=username
+SMTP_PASS=password
+SMTP_SECURE=false
+SMTP_FROM="SiteScope Crawler <noreply@sitescope.com>"
+SMTP_BCC="user@example.com"
+FRONTEND_URL=http://localhost:3000
+
+# User Management & Authentication (Optional)
+FEATURE_USER_MANAGEMENT=true
+JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+TOKEN_EXPIRY=24h
+DEFAULT_ADMIN_EMAIL=admin@sitescope.com
+DEFAULT_ADMIN_PASSWORD=admin123
 ```
 
 #### 2. Database Setup

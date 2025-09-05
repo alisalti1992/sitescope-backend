@@ -74,7 +74,7 @@ node test-email.js <jobId> test@example.com
 ### 4. Test via API Endpoint
 ```bash
 # Send email report for job 123
-curl -X POST http://localhost:4000/jobs/123/send-email-report \
+curl -X POST http://localhost:5000/jobs/123/send-email-report \
   -H "Content-Type: application/json" \
   -d '{"recipient": "test@example.com"}'
 ```
