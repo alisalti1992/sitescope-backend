@@ -26,7 +26,6 @@ storage/
 .env.development.local
 .env.test.local
 .env.production.local
-docker-compose.local.yml
 
 # Database files
 *.db

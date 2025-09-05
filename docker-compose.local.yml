@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: local-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - sitescope-network
+
+  app:
+    build: .
+    container_name: sitescope-backend-local
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      # Mount source code for hot reload (excluding node_modules)
+      - ./src:/app/src
+      - ./prisma:/app/prisma
+      - ./storage:/app/storage
+      - ./package.json:/app/package.json
+      - ./.env:/app/.env
+      # Prevent overwriting node_modules
+      - /app/node_modules
+    env_file:
+      - .env
+    environment:
+      # Override Docker-specific environment variables only
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/postgres
+    depends_on:
+      - postgres
+    networks:
+      - sitescope-network
+    # Add security capabilities for Puppeteer
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp:unconfined
+
+volumes:
+  postgres_data:
+
+networks:
+  sitescope-network:
+    driver: bridge
