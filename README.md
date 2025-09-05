@@ -16,6 +16,7 @@ A powerful web crawling backend service built with Crawlee, Express, and Postgre
 - ⚡ **Real-time Status** - Live job status updates and monitoring
 - 📧 **Email Verification** - Requires email verification before starting a crawl job
 - 🤖 **Two-step AI Analysis** - Scalable AI analysis for large websites
+- 🔄 **Automatic Migrations** - Database schema updates applied automatically on startup
 
 ## Quick Start
 
@@ -35,6 +36,7 @@ npm run docker:dev
 That's it! The server will start on `http://localhost:5000` with:
 - Automatic hot reload on code changes
 - PostgreSQL database automatically configured
+- Database migrations applied automatically
 - API documentation available at `/api-docs`
 
 ### Option 2: Local Development
@@ -63,10 +65,7 @@ cp .env.example .env
 # Start PostgreSQL (with Docker)
 docker-compose up postgres -d
 
-# Set up database
-npx prisma migrate dev
-
-# Start development server
+# Start development server (migrations run automatically)
 npm run dev
 ```
 
@@ -169,6 +168,8 @@ sitescope-backend/
 ## Development
 
 For detailed development instructions, see [DEVELOPMENT.md](./DEVELOPMENT.md).
+
+For database migration information, see [MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md).
 
 ### Docker Development
 ```bash
