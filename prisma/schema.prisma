@@ -44,7 +44,7 @@ enum UserRole {
 }
 
 model CrawlJob {
-  id                    Int           @id @default(autoincrement())
+  id                    String        @id @default(uuid()) @db.Uuid
   url                   String
   maxPages              Int
   ai                    Boolean
@@ -100,7 +100,7 @@ model CrawlJob {
 
 model InternalLink {
   id                       Int      @id @default(autoincrement())
-  jobId                    Int
+  jobId                    String    @db.Uuid
   job                      CrawlJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
   
   // Basic Info
@@ -207,7 +207,7 @@ model InternalLink {
 
 model ExternalLink {
   id          Int      @id @default(autoincrement())
-  jobId       Int
+  jobId       String    @db.Uuid
   job         CrawlJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
   address     String
   contentType String?
@@ -227,7 +227,7 @@ model ExternalLink {
 
 model Inlink {
   id           Int      @id @default(autoincrement())
-  jobId        Int
+  jobId        String    @db.Uuid
   job          CrawlJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
   
   // Link Info
@@ -269,7 +269,7 @@ model Inlink {
 
 model Sitemap {
   id              Int      @id @default(autoincrement())
-  jobId           Int
+  jobId           String    @db.Uuid
   job             CrawlJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
   
   // Basic info
