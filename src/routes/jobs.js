@@ -265,9 +265,10 @@ router.post("/", authenticateToken, requireUser, async (req, res) => {
  *       type: object
  *       properties:
  *         id:
- *           type: integer
+ *           type: string
+ *           format: uuid
  *           description: Unique job identifier
- *           example: 1
+ *           example: "123e4567-e89b-12d3-a456-426614174000"
  *         url:
  *           type: string
  *           description: The URL being crawled
@@ -314,7 +315,8 @@ router.post("/", authenticateToken, requireUser, async (req, res) => {
  *       type: object
  *       properties:
  *         id:
- *           type: integer
+ *           type: string
+ *           format: uuid
  *         url:
  *           type: string
  *         maxPages:
@@ -346,7 +348,8 @@ router.post("/", authenticateToken, requireUser, async (req, res) => {
  *       type: object
  *       properties:
  *         id:
- *           type: integer
+ *           type: string
+ *           format: uuid
  *         url:
  *           type: string
  *         title:
@@ -556,7 +559,8 @@ router.get("/", authenticateToken, requireUser, async (req, res) => {
  *         name: id
  *         required: true
  *         schema:
- *           type: integer
+ *           type: string
+ *           format: uuid
  *         description: Job ID
  *     responses:
  *       200:
@@ -570,7 +574,7 @@ router.get("/", authenticateToken, requireUser, async (req, res) => {
  */
 router.get("/:id", authenticateToken, requireUser, async (req, res) => {
   try {
-    const jobId = parseInt(req.params.id);
+    const jobId = req.params.id;
     
     const job = await prisma.crawlJob.findUnique({
       where: { id: jobId },
@@ -647,7 +651,8 @@ router.get("/:id", authenticateToken, requireUser, async (req, res) => {
  *         name: id
  *         required: true
  *         schema:
- *           type: integer
+ *           type: string
+ *           format: uuid
  *         description: Job ID
  *       - in: path
  *         name: pageId
@@ -663,7 +668,7 @@ router.get("/:id", authenticateToken, requireUser, async (req, res) => {
  */
 router.get("/:id/pages/:pageId", authenticateToken, requireUser, async (req, res) => {
   try {
-    const jobId = parseInt(req.params.id);
+    const jobId = req.params.id;
     const pageId = parseInt(req.params.pageId);
     
     const page = await prisma.internalLink.findFirst({
@@ -746,7 +751,7 @@ router.get("/:id/pages/:pageId", authenticateToken, requireUser, async (req, res
  */
 router.post("/:id/send-email-report", authenticateToken, requireUser, async (req, res) => {
   try {
-    const jobId = parseInt(req.params.id);
+    const jobId = req.params.id;
     const { recipient } = req.body;
 
     // Check if job exists and is completed
@@ -809,7 +814,8 @@ router.post("/:id/send-email-report", authenticateToken, requireUser, async (req
  *         name: id
  *         required: true
  *         schema:
- *           type: integer
+ *           type: string
+ *           format: uuid
  *         description: The ID of the crawl job to verify.
  *     requestBody:
  *       required: true
@@ -858,7 +864,7 @@ router.post("/:id/verify", authenticateToken, requireUser, async (req, res) => {
     const EmailVerificationService = require('../services/emailVerificationService');
     const verificationService = new EmailVerificationService();
 
-    const result = await verificationService.verifyCode(parseInt(id), code);
+    const result = await verificationService.verifyCode(id, code);
 
     if (result.success) {
       // If verification is successful, the job status is updated to 'pending'.
@@ -891,7 +897,8 @@ router.post("/:id/verify", authenticateToken, requireUser, async (req, res) => {
  *         name: id
  *         required: true
  *         schema:
- *           type: integer
+ *           type: string
+ *           format: uuid
  *         description: The ID of the crawl job.
  *     responses:
  *       200:
@@ -910,7 +917,7 @@ router.post("/:id/resend-verification", authenticateToken, requireUser, async (r
     const EmailVerificationService = require('../services/emailVerificationService');
     const verificationService = new EmailVerificationService();
 
-    const result = await verificationService.resendVerificationCode(parseInt(id));
+    const result = await verificationService.resendVerificationCode(id);
 
     if (result.success) {
       res.status(200).json({ message: result.message });
@@ -941,7 +948,8 @@ router.post("/:id/resend-verification", authenticateToken, requireUser, async (r
  *         name: id
  *         required: true
  *         schema:
- *           type: integer
+ *           type: string
+ *           format: uuid
  *         description: The ID of the crawl job.
  *     responses:
  *       200:
@@ -962,7 +970,7 @@ router.get("/:id/verification-status", authenticateToken, requireUser, async (re
     const EmailVerificationService = require('../services/emailVerificationService');
     const verificationService = new EmailVerificationService();
 
-    const result = await verificationService.getVerificationStatus(parseInt(id));
+    const result = await verificationService.getVerificationStatus(id);
 
     if (result.success) {
       res.status(200).json(result.status);
