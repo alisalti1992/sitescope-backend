@@ -1,43 +1,45 @@
-# Production Dockerfile with automatic migrations
+# Use Node.js with Puppeteer support for web crawling
 FROM apify/actor-node-puppeteer-chrome:20
 
 # Set working directory
-WORKDIR /app
-
+@@ -7,33 +7,38 @@ WORKDIR /app
 # Copy package files for dependency installation
 COPY --chown=myuser package*.json ./
 
-# Install only production dependencies
+# Install all dependencies (including dev dependencies for nodemon)
 RUN npm --quiet set progress=false \
-    && npm ci --only=production \
+    && npm install --include=dev \
     && echo "Installed NPM packages:" \
-    && (npm list || true) \
+    && (npm list --all || true) \
     && echo "Node.js version:" \
     && node --version \
     && echo "NPM version:" \
-    && npm --version
+    && npm --version \
+    && echo "Nodemon version:" \
+    && (npx nodemon --version || echo "Nodemon not found")
 
-# Copy Prisma schema and migrations
+# Copy Prisma schema first
 COPY --chown=myuser prisma ./prisma
 
-# Install Prisma CLI for migrations (dev dependency)
-RUN npm install prisma@latest --no-save
+# Generate Prisma client during build
 
-# Generate Prisma client
+
+
 RUN npx prisma generate
 
-# Copy source code
-COPY --chown=myuser src ./src
+# Copy rest of source code (this will be mounted as volume in development)
+COPY --chown=myuser . ./
+
 
 # Create storage directory for screenshots
 RUN mkdir -p storage/screenshots && chown -R myuser:myuser storage
 
-# Set production environment
-ENV NODE_ENV=production
+
+
 
 # Expose the application port
 EXPOSE 5000
 
-# Start the application with automatic migrations
-# The migration service will handle database setup automatically
-CMD xvfb-run -a -s "-ac -screen 0 1920x1080x24+32 -nolisten tcp" npm start
+# Use nodemon for development to watch file changes
+# Start XVFB and run the application with automatic migrations
+CMD xvfb-run -a -s "-ac -screen 0 1920x1080x24+32 -nolisten tcp" sh -c "npm start"
