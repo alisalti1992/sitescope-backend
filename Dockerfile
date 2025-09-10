@@ -24,6 +24,7 @@ COPY --chown=myuser prisma ./prisma
 # Generate Prisma client during build
 RUN npx prisma generate
 
+USER root
 RUN apt-get update && apt-get install -y \
     chromium \
     libgconf-2-4 \
