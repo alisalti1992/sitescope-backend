@@ -26,6 +26,9 @@ RUN npm install prisma@latest --no-save
 # Generate Prisma client
 RUN npx prisma generate
 
+# Copy source code
+COPY --chown=myuser src ./src
+
 # Create storage directory for screenshots
 RUN mkdir -p storage/screenshots && chown -R myuser:myuser storage
 
