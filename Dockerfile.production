@@ -26,6 +26,10 @@ RUN npm install prisma@latest --no-save
 # Generate Prisma client
 RUN npx prisma generate
 
+# Install Chromium
+RUN apt-get update && apt-get install -y chromium
+
+
 # Copy source code
 COPY --chown=myuser src ./src
 COPY --chown=myuser swagger.js ./
