@@ -113,7 +113,15 @@ class CrawlProcessor {
 
       // Setup crawler and start crawling
       const crawledUrls = new Set();
-      const crawler = await this.setupCrawler(job, crawledUrls);
+      
+      // Track the canonical domain after redirect resolution
+      const domainTracker = { 
+        originalDomain: null,
+        canonicalDomain: null,
+        domains: new Set()
+      };
+      
+      const crawler = await this.setupCrawler(job, crawledUrls, domainTracker);
       
       // Get initial URLs to crawl
       const initialUrls = [{ url: this.normalizeUrl(job.url, job.ignoreUrlParameters) }];
@@ -147,9 +155,10 @@ class CrawlProcessor {
    * Setup and configure the Puppeteer crawler
    * @param {Object} job - The crawl job
    * @param {Set} crawledUrls - Set to track crawled URLs
+   * @param {Object} domainTracker - Object to track domain redirects
    * @returns {PuppeteerCrawler} Configured crawler instance
    */
-  async setupCrawler(job, crawledUrls) {
+  async setupCrawler(job, crawledUrls, domainTracker) {
     const { RequestQueue } = require("crawlee");
     
     // Create a unique request queue for this job
@@ -165,7 +174,7 @@ class CrawlProcessor {
       navigationTimeoutSecs: 30,
       requestQueue, // Use the unique request queue
       requestHandler: async ({ request, page, response, enqueueLinks, log }) => {
-        await this.handlePageCrawl(job, request, page, response, enqueueLinks, log, crawledUrls, postTypeCounters);
+        await this.handlePageCrawl(job, request, page, response, enqueueLinks, log, crawledUrls, postTypeCounters, domainTracker);
       },
       failedRequestHandler: async ({ request, error, log }) => {
         log.error(`Failed to crawl ${request.url}: ${error.message}`);
@@ -176,11 +185,26 @@ class CrawlProcessor {
   /**
    * Handle crawling of a single page
    */
-  async handlePageCrawl(job, request, page, response, enqueueLinks, log, crawledUrls, postTypeCounters = new Map()) {
+  async handlePageCrawl(job, request, page, response, enqueueLinks, log, crawledUrls, postTypeCounters = new Map(), domainTracker = null) {
     const startTime = Date.now();
     const normalizedUrl = this.normalizeUrl(request.loadedUrl || request.url, job.ignoreUrlParameters);
 
     try {
+      // Track domain redirects on first page
+      if (domainTracker && !domainTracker.originalDomain) {
+        const originalUrlObj = new URL(job.url);
+        const currentUrlObj = new URL(request.loadedUrl || request.url);
+        
+        domainTracker.originalDomain = originalUrlObj.hostname;
+        domainTracker.canonicalDomain = currentUrlObj.hostname;
+        domainTracker.domains.add(originalUrlObj.hostname);
+        domainTracker.domains.add(currentUrlObj.hostname);
+        
+        if (originalUrlObj.hostname !== currentUrlObj.hostname) {
+          log.info(`🔄 Domain redirect detected: ${originalUrlObj.hostname} → ${currentUrlObj.hostname}`);
+        }
+      }
+
       // Skip if already processed or reached limit
       if (await this.shouldSkipPage(normalizedUrl, crawledUrls, job, log)) {
         return;
@@ -219,7 +243,7 @@ class CrawlProcessor {
       const internalLink = await this.savePageData(job.id, normalizedUrl, pageData, response, startTime);
 
       // Process links and enqueue new ones (with sampling logic if enabled)
-      await this.processPageLinks(job, internalLink, page, normalizedUrl, enqueueLinks, crawledUrls, postTypeCounters);
+      await this.processPageLinks(job, internalLink, page, normalizedUrl, enqueueLinks, crawledUrls, postTypeCounters, domainTracker);
 
       // Update job progress
       await this.updateJobProgress(job.id, normalizedUrl);
@@ -384,14 +408,14 @@ class CrawlProcessor {
   /**
    * Process all links found on a page
    */
-  async processPageLinks(job, internalLinkRecord, page, sourceUrl, enqueueLinks, crawledUrls, postTypeCounters = new Map()) {
+  async processPageLinks(job, internalLinkRecord, page, sourceUrl, enqueueLinks, crawledUrls, postTypeCounters = new Map(), domainTracker = null) {
     const links = await this.extractAllLinks(page, sourceUrl);
     
     // Save link relationships
     await this.saveLinkRelationships(job, internalLinkRecord, links);
     
     // Enqueue internal links for further crawling (with sampling logic if enabled)
-    await this.enqueueInternalLinks(links.internal, enqueueLinks, crawledUrls, job, postTypeCounters);
+    await this.enqueueInternalLinks(links.internal, enqueueLinks, crawledUrls, job, postTypeCounters, domainTracker);
   }
 
   /**
@@ -852,10 +876,10 @@ class CrawlProcessor {
   /**
    * Enqueue internal links for crawling
    */
-  async enqueueInternalLinks(internalLinks, enqueueLinks, crawledUrls, job, postTypeCounters = new Map()) {
+  async enqueueInternalLinks(internalLinks, enqueueLinks, crawledUrls, job, postTypeCounters = new Map(), domainTracker = null) {
     let urls = internalLinks
       .map(link => this.normalizeUrl(link.href, job.ignoreUrlParameters))
-      .filter(url => !crawledUrls.has(url) && this.isValidInternalUrl(url, job.url));
+      .filter(url => !crawledUrls.has(url) && this.isValidInternalUrl(url, job.url, domainTracker));
     
     // For sampled crawl, filter out URLs where post type limit is already reached
     if (job.sampledCrawl) {
@@ -909,15 +933,46 @@ class CrawlProcessor {
   }
 
   /**
-   * Check if URL is valid for internal crawling
+   * Check if URL is valid for internal crawling with redirect-aware domain matching
+   * @param {string} url - The URL to validate
+   * @param {string} jobUrl - The original job URL
+   * @param {Object} domainTracker - Domain tracker containing redirect information
+   * @returns {boolean} True if the URL is valid for internal crawling
    */
-  isValidInternalUrl(url, jobUrl) {
+  isValidInternalUrl(url, jobUrl, domainTracker = null) {
     try {
       const urlObj = new URL(url);
       const jobUrlObj = new URL(jobUrl);
       
-      // Must be same hostname
-      if (urlObj.hostname !== jobUrlObj.hostname) return false;
+      // Check if hostname matches using redirect-aware logic
+      let isValidHostname = false;
+      
+      if (domainTracker && domainTracker.domains.size > 0) {
+        // If we have redirect information, check against all known domains
+        isValidHostname = domainTracker.domains.has(urlObj.hostname);
+      } else {
+        // Fallback to direct hostname comparison
+        isValidHostname = urlObj.hostname === jobUrlObj.hostname;
+      }
+      
+      // Enhanced domain matching for common www/non-www scenarios
+      if (!isValidHostname) {
+        // Check for www variations
+        const urlHostnameWithoutWww = urlObj.hostname.replace(/^www\./, '');
+        const jobHostnameWithoutWww = jobUrlObj.hostname.replace(/^www\./, '');
+        
+        if (urlHostnameWithoutWww === jobHostnameWithoutWww) {
+          isValidHostname = true;
+          
+          // Add both variations to domain tracker if available
+          if (domainTracker) {
+            domainTracker.domains.add(urlObj.hostname);
+            domainTracker.domains.add(jobUrlObj.hostname);
+          }
+        }
+      }
+      
+      if (!isValidHostname) return false;
       
       // Skip files and non-HTTP protocols
       if (url.match(/\.(pdf|jpg|jpeg|png|gif|css|js|ico|svg|woff|woff2|ttf|eot|zip|rar|exe|dmg)$/i)) return false;
