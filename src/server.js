@@ -49,7 +49,7 @@ apiRouter.use('/jobs', jobRoutes);
 
 // Health Routes (no auth required)
 const healthRoutes = require("./routes/health");
-apiRouter.use('/health', healthRoutes);
+app.use('/health', healthRoutes);
 
 // Migration Routes (no auth required for status, consider adding auth for apply)
 const migrationRoutes = require("./routes/migration");
