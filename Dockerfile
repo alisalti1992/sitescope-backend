@@ -1,5 +1,5 @@
 # Use Node.js with Puppeteer support for web crawling
-FROM apify/actor-node-chrome
+FROM apify/actor-node-puppeteer-chrome:20
 
 # Set working directory
 WORKDIR /app
@@ -23,6 +23,26 @@ COPY --chown=myuser prisma ./prisma
 
 # Generate Prisma client during build
 RUN npx prisma generate
+
+RUN apt-get update && apt-get install -y \
+    chromium \
+    libgconf-2-4 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libgdk-pixbuf2.0-0 \
+    libgtk-3-0 \
+    libnss3 \
+    libx11-xcb1 \
+    libxss1 \
+    fonts-liberation \
+    libappindicator3-1 \
+    libasound2 \
+    libdrm2 \
+    libxkbcommon0 \
+    xdg-utils
+
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD true
+ENV PUPPETEER_EXECUTABLE_PATH /usr/bin/chromium
 
 # Copy rest of source code (this will be mounted as volume in development)
 COPY --chown=myuser . ./
