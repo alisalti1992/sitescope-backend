@@ -1,5 +1,5 @@
 # Use Node.js with Puppeteer support for web crawling
-FROM apify/actor-node-puppeteer-chrome:20
+FROM apify/actor-node-chrome
 
 # Set working directory
 WORKDIR /app
