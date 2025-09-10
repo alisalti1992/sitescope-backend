@@ -2,7 +2,7 @@
 FROM apify/actor-node-puppeteer-chrome:20
 
 # Set working directory
-@@ -7,33 +7,38 @@ WORKDIR /app
+WORKDIR /app
 # Copy package files for dependency installation
 COPY --chown=myuser package*.json ./
 
