@@ -21,16 +21,7 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      # Mount source code for hot reload (excluding node_modules)
-      - ./src:/app/src
-      - ./prisma:/app/prisma
       - ./storage:/app/storage
-      - ./package.json:/app/package.json
-      - ./.env:/app/.env
-      # Prevent overwriting node_modules
-      - /app/node_modules
-    env_file:
-      - .env
     environment:
       # Override Docker-specific environment variables only
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/postgres
