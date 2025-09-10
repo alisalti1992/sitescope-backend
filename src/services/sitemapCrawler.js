@@ -342,8 +342,10 @@ class SitemapCrawler {
           const url = urlData.loc;
           const urlObj = new URL(url);
           
-          // Only include URLs from the same domain
-          if (urlObj.hostname === baseUrlObj.hostname) {
+          // Check if hostname matches, with www/non-www variation support
+          const isValidHostname = this.isMatchingDomain(urlObj.hostname, baseUrlObj.hostname);
+          
+          if (isValidHostname) {
             urls.add(url);
           }
         } catch (error) {
@@ -358,6 +360,23 @@ class SitemapCrawler {
     
     // Limit URLs to prevent overwhelming the crawler
     return urlArray.slice(0, 2000);
+  }
+
+  /**
+   * Check if two domains match, accounting for www/non-www variations
+   * @param {string} hostname1 - First hostname
+   * @param {string} hostname2 - Second hostname
+   * @returns {boolean} True if domains match
+   */
+  isMatchingDomain(hostname1, hostname2) {
+    // Direct match
+    if (hostname1 === hostname2) return true;
+    
+    // Check www variations
+    const hostname1WithoutWww = hostname1.replace(/^www\./, '');
+    const hostname2WithoutWww = hostname2.replace(/^www\./, '');
+    
+    return hostname1WithoutWww === hostname2WithoutWww;
   }
 
   /**
