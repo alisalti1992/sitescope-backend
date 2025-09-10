@@ -22,9 +22,6 @@ services:
       - "5000:5000"
     volumes:
       - ./storage:/app/storage
-    environment:
-      # Override Docker-specific environment variables only
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/postgres
     depends_on:
       - postgres
     networks:
