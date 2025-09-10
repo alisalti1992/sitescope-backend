@@ -21,19 +21,10 @@ const prisma = new PrismaClient();
  *       200:
  *         description: Server and database are healthy
  *         content:
- *           application/json:
+ *           text/plain:
  *             schema:
- *               type: object
- *               properties:
- *                 server:
- *                   type: string
- *                   example: "✅ UP"
- *                 database:
- *                   type: string
- *                   example: "✅ Connected"
- *                 timestamp:
- *                   type: string
- *                   format: date-time
+ *               type: string
+ *               example: OK
  *       500:
  *         description: Server is up but database connection failed
  *         content:
@@ -59,11 +50,7 @@ router.get("/", async (req, res) => {
         // Try a simple DB query
         await prisma.$queryRaw`SELECT 1`;
 
-        res.json({
-            server: "✅ UP",
-            database: "✅ Connected",
-            timestamp: new Date().toISOString(),
-        });
+        res.type("text").send("OK");
     } catch (err) {
         res.status(500).json({
             server: "✅ UP",
