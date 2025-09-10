@@ -22,10 +22,11 @@ RUN npm --quiet set progress=false \
 COPY --chown=myuser prisma ./prisma
 
 # Generate Prisma client during build
-
-
-
 RUN npx prisma generate
+
+# Install Chromium
+RUN apt-get update && apt-get install -y chromium
+
 
 # Copy rest of source code (this will be mounted as volume in development)
 COPY --chown=myuser . ./
