@@ -21,6 +21,8 @@ class CrawlProcessor {
     this.isProcessing = false;
     this.processingInterval = null;
     this.PROCESSING_INTERVAL = 10000; // 10 seconds
+    // Get sampled crawl configuration from environment
+    this.SAMPLED_CRAWL_PAGES_PER_TYPE = parseInt(process.env.SAMPLED_CRAWL_PAGES_PER_TYPE) || 3;
   }
 
   // ==================== LIFECYCLE MANAGEMENT ====================
@@ -169,12 +171,11 @@ class CrawlProcessor {
     const postTypeCounters = new Map();
     
     return new PuppeteerCrawler({
-      maxRequestsPerCrawl: job.maxPages,
       requestHandlerTimeoutSecs: 60,
       navigationTimeoutSecs: 30,
       requestQueue, // Use the unique request queue
-      requestHandler: async ({ request, page, response, enqueueLinks, log }) => {
-        await this.handlePageCrawl(job, request, page, response, enqueueLinks, log, crawledUrls, postTypeCounters, domainTracker);
+      requestHandler: async ({ request, page, response, enqueueLinks, log, crawler }) => {
+        await this.handlePageCrawl(job, request, page, response, enqueueLinks, log, crawledUrls, postTypeCounters, domainTracker, crawler);
       },
       failedRequestHandler: async ({ request, error, log }) => {
         log.error(`Failed to crawl ${request.url}: ${error.message}`);
@@ -185,7 +186,7 @@ class CrawlProcessor {
   /**
    * Handle crawling of a single page
    */
-  async handlePageCrawl(job, request, page, response, enqueueLinks, log, crawledUrls, postTypeCounters = new Map(), domainTracker = null) {
+  async handlePageCrawl(job, request, page, response, enqueueLinks, log, crawledUrls, postTypeCounters = new Map(), domainTracker = null, crawler = null) {
     const startTime = Date.now();
     const normalizedUrl = this.normalizeUrl(request.loadedUrl || request.url, job.ignoreUrlParameters);
 
@@ -206,7 +207,14 @@ class CrawlProcessor {
       }
 
       // Skip if already processed or reached limit
-      if (await this.shouldSkipPage(normalizedUrl, crawledUrls, job, log)) {
+      const shouldSkip = await this.shouldSkipPage(normalizedUrl, crawledUrls, job, log);
+      if (shouldSkip) {
+        // If we've reached the max pages limit, stop the entire crawler
+        const currentCount = await this.prisma.internalLink.count({ where: { jobId: job.id } });
+        if (currentCount >= job.maxPages && crawler) {
+          log.info(`🛑 Stopping crawler - reached max pages limit: ${job.maxPages}`);
+          await crawler.teardown();
+        }
         return;
       }
 
@@ -232,7 +240,7 @@ class CrawlProcessor {
           // Only count second-level and deeper pages
           const currentCount = postTypeCounters.get(postType) || 0;
           postTypeCounters.set(postType, currentCount + 1);
-          log.info(`📊 Post type '${postType}': ${currentCount + 1}/3 pages crawled (level ${urlLevel})`);
+          log.info(`📊 Post type '${postType}': ${currentCount + 1}/${this.SAMPLED_CRAWL_PAGES_PER_TYPE} pages crawled (level ${urlLevel})`);
         } else {
           // First-level pages are always allowed
           log.info(`📊 First-level page allowed: ${normalizedUrl} (level ${urlLevel})`);
@@ -771,12 +779,12 @@ class CrawlProcessor {
       return false;
     }
     
-    // For second-level and deeper pages, apply the 3-page limit per post type
+    // For second-level and deeper pages, apply the configurable page limit per post type
     const postType = this.detectPostType(url);
     const currentCount = postTypeCounters.get(postType) || 0;
     
-    if (currentCount >= 3) {
-      log.info(`⏭️ Skipping ${url} - already crawled 3 pages of post type '${postType}' (level ${urlLevel})`);
+    if (currentCount >= this.SAMPLED_CRAWL_PAGES_PER_TYPE) {
+      log.info(`⏭️ Skipping ${url} - already crawled ${this.SAMPLED_CRAWL_PAGES_PER_TYPE} pages of post type '${postType}' (level ${urlLevel})`);
       return true;
     }
     
@@ -807,59 +815,157 @@ class CrawlProcessor {
   }
 
   /**
-   * Detect the post type based on URL patterns and page content
+   * Detect the post type based on URL patterns and page content with language awareness
    * @param {string} url - The URL to analyze
    * @param {Object} pageData - Optional page data for content analysis
-   * @returns {string} The detected post type
+   * @returns {string} The detected post type with language suffix if applicable
    */
   detectPostType(url, pageData = null) {
     try {
       const urlObj = new URL(url);
       const pathname = urlObj.pathname.toLowerCase();
-      
-      // Common blog post patterns
-      if (pathname.match(/\/(blog|post|article|news)\/.*\d{4}/)) return 'blog-post';
-      if (pathname.match(/\/\d{4}\/\d{2}\/\d{2}\//)) return 'blog-post';
-      if (pathname.match(/\/(blog|post|article|news)\//)) return 'blog-post';
-      
-      // E-commerce product patterns
-      if (pathname.match(/\/(product|item|shop)\//)) return 'product';
-      if (pathname.match(/\/p\/|\/products\//)) return 'product';
-      
-      // Category/archive pages
-      if (pathname.match(/\/(category|tag|archive|topics)\//)) return 'category';
-      if (pathname.match(/\/cat\/|\/tags\//)) return 'category';
-      
-      // Landing/service pages
-      if (pathname.match(/\/(services|solutions|features)\//)) return 'service';
-      
-      // About/company pages
-      if (pathname.match(/\/(about|company|team|contact)\//)) return 'about';
-      
-      // Documentation/help pages
-      if (pathname.match(/\/(docs|help|support|faq|guide)\//)) return 'documentation';
-      
-      // Homepage and main sections
-      if (pathname === '/' || pathname === '') return 'homepage';
-      
-      // Use page title/content if available for better detection
-      if (pageData && pageData.title) {
-        const title = pageData.title.toLowerCase();
-        if (title.includes('blog') || title.includes('post') || title.includes('article')) return 'blog-post';
-        if (title.includes('product') || title.includes('buy') || title.includes('price')) return 'product';
-        if (title.includes('category') || title.includes('archive')) return 'category';
-      }
-      
-      // Default fallback based on path depth
       const pathSegments = pathname.split('/').filter(s => s.length > 0);
-      if (pathSegments.length === 0) return 'homepage';
-      if (pathSegments.length === 1) return 'section';
-      if (pathSegments.length >= 2) return 'content';
       
-      return 'other';
+      // Detect language prefix for multi-language sites
+      const language = this.detectLanguageFromUrl(url);
+      const languageSuffix = language ? `-${language}` : '';
+      
+      // Dynamic pattern detection based on URL structure
+      let postType = this.analyzeUrlStructure(pathSegments, pageData);
+      
+      // Apply language suffix if detected
+      return `${postType}${languageSuffix}`;
     } catch (error) {
       return 'other';
     }
+  }
+
+  /**
+   * Detect language from URL path (e.g., /th/, /en/, /fr/)
+   * @param {string} url - The URL to analyze
+   * @returns {string|null} Language code if detected, null otherwise
+   */
+  detectLanguageFromUrl(url) {
+    try {
+      const urlObj = new URL(url);
+      const pathSegments = urlObj.pathname.split('/').filter(s => s.length > 0);
+      
+      // Common language codes (2-3 characters)
+      const languageCodes = [
+        'en', 'es', 'fr', 'de', 'it', 'pt', 'ru', 'ja', 'ko', 'zh', 'ar',
+        'th', 'vi', 'nl', 'sv', 'da', 'no', 'fi', 'pl', 'tr', 'he', 'hi',
+        'bn', 'ur', 'fa', 'ta', 'te', 'ml', 'kn', 'gu', 'mr', 'pa', 'or',
+        'as', 'bh', 'ne', 'si', 'my', 'km', 'lo', 'ka', 'am', 'ti', 'om',
+        'so', 'sw', 'zu', 'xh', 'af', 'st', 'tn', 've', 'ts', 'ss', 'nr',
+        'nso', 'eng', 'spa', 'fra', 'deu', 'ita', 'por', 'rus', 'jpn', 'kor'
+      ];
+      
+      // Check first path segment for language code
+      if (pathSegments.length > 0) {
+        const firstSegment = pathSegments[0].toLowerCase();
+        if (languageCodes.includes(firstSegment)) {
+          return firstSegment;
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * Analyze URL structure to determine content type dynamically
+   * @param {Array} pathSegments - URL path segments
+   * @param {Object} pageData - Optional page data for content analysis
+   * @returns {string} The detected content type
+   */
+  analyzeUrlStructure(pathSegments, pageData = null) {
+    if (pathSegments.length === 0) {
+      return 'homepage';
+    }
+
+    // Skip language segment if present
+    let segments = [...pathSegments];
+    const languageCodes = ['en', 'es', 'fr', 'de', 'it', 'pt', 'ru', 'ja', 'ko', 'zh', 'ar', 'th', 'vi', 'nl', 'sv', 'da', 'no', 'fi', 'pl', 'tr', 'he'];
+    if (segments.length > 0 && languageCodes.includes(segments[0].toLowerCase())) {
+      segments = segments.slice(1); // Remove language prefix
+    }
+
+    if (segments.length === 0) {
+      return 'homepage';
+    }
+
+    // First-level sections (e.g., /about, /contact, /services)
+    if (segments.length === 1) {
+      const segment = segments[0].toLowerCase();
+      
+      // Known static pages
+      if (['about', 'contact', 'privacy', 'terms', 'policy'].includes(segment)) {
+        return 'static';
+      }
+      
+      // Common sections
+      return segment; // Use the actual segment name (e.g., 'services', 'blog', 'products')
+    }
+
+    // Multi-level content
+    if (segments.length >= 2) {
+      const firstSegment = segments[0].toLowerCase();
+      const lastSegment = segments[segments.length - 1].toLowerCase();
+      
+      // Check for date patterns in URLs (blog posts)
+      const datePattern = /^\d{4}$|^\d{2}$|^\d{1,2}$/;
+      if (segments.some(segment => datePattern.test(segment))) {
+        return 'blog-post';
+      }
+      
+      // Check for common patterns
+      const contentPatterns = {
+        'blog': 'blog-post',
+        'post': 'blog-post', 
+        'article': 'article',
+        'news': 'news-post',
+        'product': 'product',
+        'item': 'product',
+        'service': 'service',
+        'services': 'service',
+        'category': 'category',
+        'tag': 'tag',
+        'archive': 'archive',
+        'portfolio': 'portfolio',
+        'project': 'project',
+        'case-study': 'case-study',
+        'team': 'team',
+        'job': 'job',
+        'career': 'career',
+        'event': 'event',
+        'resource': 'resource',
+        'download': 'download',
+        'gallery': 'gallery',
+        'video': 'video'
+      };
+      
+      // Check if first segment matches known patterns
+      if (contentPatterns[firstSegment]) {
+        return contentPatterns[firstSegment];
+      }
+      
+      // Fallback: use first segment as content type
+      return firstSegment;
+    }
+
+    // Use page content analysis if available
+    if (pageData && pageData.title) {
+      const title = pageData.title.toLowerCase();
+      if (title.includes('blog') || title.includes('post')) return 'blog-post';
+      if (title.includes('product')) return 'product';
+      if (title.includes('service')) return 'service';
+      if (title.includes('case study')) return 'case-study';
+      if (title.includes('news')) return 'news';
+    }
+
+    return 'content';
   }
 
   /**
@@ -877,6 +983,12 @@ class CrawlProcessor {
    * Enqueue internal links for crawling
    */
   async enqueueInternalLinks(internalLinks, enqueueLinks, crawledUrls, job, postTypeCounters = new Map(), domainTracker = null) {
+    // Check if we've reached the max pages limit before enqueuing new links
+    const currentCount = await this.prisma.internalLink.count({ where: { jobId: job.id } });
+    if (currentCount >= job.maxPages) {
+      return; // Don't enqueue any more links if limit is reached
+    }
+    
     let urls = internalLinks
       .map(link => this.normalizeUrl(link.href, job.ignoreUrlParameters))
       .filter(url => !crawledUrls.has(url) && this.isValidInternalUrl(url, job.url, domainTracker));
@@ -894,7 +1006,7 @@ class CrawlProcessor {
         // For second-level and deeper pages, check post type limits
         const postType = this.detectPostType(url);
         const currentCount = postTypeCounters.get(postType) || 0;
-        return currentCount < 3; // Only enqueue if we haven't reached 3 pages for this post type
+        return currentCount < this.SAMPLED_CRAWL_PAGES_PER_TYPE; // Only enqueue if we haven't reached the limit for this post type
       });
     }
     
