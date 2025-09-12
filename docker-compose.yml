@@ -8,10 +8,10 @@ services:
     volumes:
       # Mount storage directory for screenshots and persistent data
       - ./storage:/app/storage
-    env_file:
-      - .env
-    environment:
-      - ENV_VALUES_HERE=IF_YOU_WANT
+    #env_file:
+    #  - .env
+    #environment:
+    #  - ENV_VALUES_HERE=IF_YOU_WANT
       # Override DATABASE_URL for Docker network connection
       #- DATABASE_URL=postgresql://postgres:postgres@postgres:5432/postgres
     # Add security capabilities for Puppeteer
