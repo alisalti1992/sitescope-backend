@@ -23,6 +23,8 @@ class CrawlProcessor {
     this.PROCESSING_INTERVAL = 10000; // 10 seconds
     // Get sampled crawl configuration from environment
     this.SAMPLED_CRAWL_PAGES_PER_TYPE = parseInt(process.env.SAMPLED_CRAWL_PAGES_PER_TYPE) || 3;
+    // Track running crawlers for stop functionality
+    this.runningCrawlers = new Map(); // jobId -> crawler instance
   }
 
   // ==================== LIFECYCLE MANAGEMENT ====================
@@ -103,6 +105,13 @@ class CrawlProcessor {
    */
   async processJob(job) {
     try {
+      // Check if job was stopped before processing
+      const currentJob = await this.prisma.crawlJob.findUnique({ where: { id: job.id } });
+      if (currentJob.status === 'stopped') {
+        console.log(`⏹️ Job ${job.id} was stopped before processing`);
+        return;
+      }
+
       // Mark job as running
       await this.updateJobStatus(job.id, 'running', {
         startedAt: job.startedAt || new Date(),
@@ -112,6 +121,13 @@ class CrawlProcessor {
       // Always crawl robots.txt and sitemaps first
       console.log(`🤖 Processing robots.txt and sitemaps for: ${job.url}`);
       const { robotsData, sitemaps, sitemapUrls } = await this.processRobotsAndSitemaps(job);
+
+      // Check again if job was stopped during robots/sitemap processing
+      const jobAfterRobots = await this.prisma.crawlJob.findUnique({ where: { id: job.id } });
+      if (jobAfterRobots.status === 'stopped') {
+        console.log(`⏹️ Job ${job.id} was stopped during robots.txt/sitemap processing`);
+        return;
+      }
 
       // Setup crawler and start crawling
       const crawledUrls = new Set();
@@ -125,29 +141,54 @@ class CrawlProcessor {
       
       const crawler = await this.setupCrawler(job, crawledUrls, domainTracker);
       
-      // Get initial URLs to crawl
-      const initialUrls = [{ url: this.normalizeUrl(job.url, job.ignoreUrlParameters) }];
+      // Register the crawler for potential stopping
+      this.runningCrawlers.set(job.id, crawler);
       
-      // Add sitemap URLs (now always included)
-      if (sitemapUrls.length > 0) {
-        console.log(`🗺️ Adding ${sitemapUrls.length} URLs from sitemaps`);
-        initialUrls.push(...sitemapUrls.map(url => ({ url })));
+      try {
+        // Get initial URLs to crawl
+        const initialUrls = [{ url: this.normalizeUrl(job.url, job.ignoreUrlParameters) }];
+        
+        // Add sitemap URLs (now always included)
+        if (sitemapUrls.length > 0) {
+          console.log(`🗺️ Adding ${sitemapUrls.length} URLs from sitemaps`);
+          initialUrls.push(...sitemapUrls.map(url => ({ url })));
+        }
+        
+        console.log(`🕷️ Starting crawl for: ${job.url}`);
+        await crawler.run(initialUrls);
+        
+        // Clean up crawler tracking
+        this.runningCrawlers.delete(job.id);
+        
+        // Check final status before post-processing
+        const finalJob = await this.prisma.crawlJob.findUnique({ where: { id: job.id } });
+        if (finalJob.status === 'stopped') {
+          console.log(`⏹️ Job ${job.id} was stopped during crawling`);
+          return;
+        }
+        
+        // Post-processing
+        await this.finalizeCrawl(job.id);
+        
+        console.log(`✅ Completed job ${job.id}`);
+        
+      } catch (crawlError) {
+        // Clean up crawler tracking on error
+        this.runningCrawlers.delete(job.id);
+        throw crawlError;
       }
-      
-      console.log(`🕷️ Starting crawl for: ${job.url}`);
-      await crawler.run(initialUrls);
-      
-      // Post-processing
-      await this.finalizeCrawl(job.id);
-      
-      console.log(`✅ Completed job ${job.id}`);
 
     } catch (error) {
       console.error(`❌ Job ${job.id} failed:`, error.message);
-      await this.updateJobStatus(job.id, 'failed', {
-        completedAt: new Date(),
-        errorMessage: error.message
-      });
+      
+      // Don't update to failed if job was manually stopped
+      const finalJob = await this.prisma.crawlJob.findUnique({ where: { id: job.id } });
+      if (finalJob.status !== 'stopped') {
+        await this.updateJobStatus(job.id, 'failed', {
+          completedAt: new Date(),
+          errorMessage: error.message
+        });
+      }
     }
   }
 

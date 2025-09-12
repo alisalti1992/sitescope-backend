@@ -1,32 +1,28 @@
 services:
-  postgres:
-    image: postgres:15
-    container_name: local-postgres
-    restart: always
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: postgres
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
   app:
     build: .
-    container_name: sitescope-backend-local
+    container_name: sitescope-backend
     restart: unless-stopped
     ports:
       - "5000:5000"
     volumes:
+      # Mount storage directory for screenshots and persistent data
       - ./storage:/app/storage
-    depends_on:
-      - postgres
+    env_file:
+      - .env
+    environment:
+      - ENV_VALUES_HERE=IF_YOU_WANT
+      # Override DATABASE_URL for Docker network connection
+      #- DATABASE_URL=postgresql://postgres:postgres@postgres:5432/postgres
     # Add security capabilities for Puppeteer
     cap_add:
       - SYS_ADMIN
     security_opt:
       - seccomp:unconfined
-
-volumes:
-  postgres_data:
+    # Health check to ensure the app is running properly
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

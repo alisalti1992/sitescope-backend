@@ -3,20 +3,19 @@ FROM apify/actor-node-puppeteer-chrome:20
 
 # Set working directory
 WORKDIR /app
+
 # Copy package files for dependency installation
 COPY --chown=myuser package*.json ./
 
-# Install all dependencies (including dev dependencies for nodemon)
+# Install dependencies
 RUN npm --quiet set progress=false \
-    && npm install --include=dev \
+    && npm install \
     && echo "Installed NPM packages:" \
     && (npm list --all || true) \
     && echo "Node.js version:" \
     && node --version \
     && echo "NPM version:" \
-    && npm --version \
-    && echo "Nodemon version:" \
-    && (npx nodemon --version || echo "Nodemon not found")
+    && npm --version
 
 # Copy Prisma schema first
 COPY --chown=myuser prisma ./prisma
@@ -24,6 +23,7 @@ COPY --chown=myuser prisma ./prisma
 # Generate Prisma client during build
 RUN npx prisma generate
 
+# Install system dependencies for Chromium and Puppeteer
 USER root
 RUN apt-get update && apt-get install -y \
     chromium \
@@ -40,20 +40,30 @@ RUN apt-get update && apt-get install -y \
     libasound2 \
     libdrm2 \
     libxkbcommon0 \
-    xdg-utils
+    xdg-utils \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD true
-ENV PUPPETEER_EXECUTABLE_PATH /usr/bin/chromium
+# Set Puppeteer environment variables
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Copy rest of source code (this will be mounted as volume in development)
-COPY --chown=myuser . ./
+# Switch back to myuser
+USER myuser
+
+# Copy source code and views
+COPY --chown=myuser src ./src
+COPY --chown=myuser views ./views
 
 # Create storage directory for screenshots
-RUN mkdir -p storage/screenshots && chown -R myuser:myuser storage
+RUN mkdir -p storage/screenshots
 
 # Expose the application port
 EXPOSE 5000
 
-# Use nodemon for development to watch file changes
-# Start XVFB and run the application with automatic migrations
-CMD xvfb-run -a -s "-ac -screen 0 1920x1080x24+32 -nolisten tcp" sh -c "npm start"
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:5000/health || exit 1
+
+# Start the application with automatic migrations
+CMD ["xvfb-run", "-a", "-s", "-ac -screen 0 1920x1080x24+32 -nolisten tcp", "npm", "start"]

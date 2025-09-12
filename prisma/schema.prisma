@@ -54,7 +54,7 @@ model CrawlJob {
   sampledCrawl          Boolean       @default(false) // Whether to crawl only 3 pages of each post type
   ignoreUrlParameters   Boolean       @default(false) // Whether to ignore URL parameters when crawling and storing links
   requireEmailVerification Boolean    @default(true) // Whether email verification is required before crawl starts
-  status                String        @default("pending") // pending, running, completed, failed, paused, waiting_verification
+  status                String        @default("pending") // pending, running, completed, failed, paused, waiting_verification, stopped
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
   completedAt           DateTime?
