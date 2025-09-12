@@ -48,15 +48,16 @@ RUN apt-get update && apt-get install -y \
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
+# Create storage directories with proper permissions (as root)
+RUN mkdir -p storage/screenshots storage/request_queues storage/key_value_stores \
+    && chown -R myuser:myuser storage
+
 # Switch back to myuser
 USER myuser
 
 # Copy source code and views
 COPY --chown=myuser src ./src
 COPY --chown=myuser views ./views
-
-# Create storage directory for screenshots
-RUN mkdir -p storage/screenshots
 
 # Expose the application port
 EXPOSE 5000
