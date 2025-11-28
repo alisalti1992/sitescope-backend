@@ -67,4 +67,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:5000/health || exit 1
 
 # Start the application with automatic migrations
-CMD ["xvfb-run", "-a", "-s", "-ac -screen 0 1920x1080x24+32 -nolisten tcp", "npm", "start"]
+# Ensure storage directories exist with proper permissions at runtime
+CMD mkdir -p storage/screenshots storage/request_queues storage/key_value_stores && \
+    xvfb-run -a -s "-ac -screen 0 1920x1080x24+32 -nolisten tcp" npm start
