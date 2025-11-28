@@ -7,7 +7,8 @@ services:
       - "5000:5000"
     volumes:
       # Mount storage directory for screenshots and persistent data
-      - ./storage:/app/storage
+      # Use a named volume for better permission handling
+      - storage-data:/app/storage
     #env_file:
     #  - .env
     #environment:
@@ -26,3 +27,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+# Named volumes for persistent storage
+volumes:
+  storage-data:

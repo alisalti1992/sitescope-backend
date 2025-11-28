@@ -59,6 +59,10 @@ USER myuser
 COPY --chown=myuser src ./src
 COPY --chown=myuser views ./views
 
+# Copy and set up entrypoint script
+COPY --chown=myuser docker-entrypoint.sh ./
+RUN chmod +x docker-entrypoint.sh
+
 # Expose the application port
 EXPOSE 5000
 
@@ -66,7 +70,5 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:5000/health || exit 1
 
-# Start the application with automatic migrations
-# Ensure storage directories exist with proper permissions at runtime
-CMD mkdir -p storage/screenshots storage/request_queues storage/key_value_stores && \
-    xvfb-run -a -s "-ac -screen 0 1920x1080x24+32 -nolisten tcp" npm start
+# Use entrypoint script to handle storage setup and start application
+CMD ["./docker-entrypoint.sh"]
